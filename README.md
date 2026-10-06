@@ -19,6 +19,8 @@
 
 **原作的功劳全部归于原作者。** 本仓库只在其基础上增加功能、修复漏洞，并完整保留了上游的版权声明、[NOTICE.md](NOTICE.md)、[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) 与 [LICENSE](LICENSE)。本改版同样**完全非商业**，沿用上游的全部声明与免责条款；素材版权归鹰角网络 / Yostar 所有。
 
+本仓库是《明日方舟》限时玩法「卫戍协议：盟约」（官方英文名 *Stronghold Protocol: Alliance*）非官方同人复刻的改版。**「Infinity」是本改版的名字，不是游戏的名字** —— 游戏本体的介绍、玩法、安装与联机说明请见上游仓库。
+
 ---
 
 ## 本改版新增/修改了什么

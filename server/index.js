@@ -764,6 +764,8 @@ async function main() {
     else console.error('[boot] failed to start', e);
     process.exit(1);
   }
+  // The banner keeps the GAME's official English title (test/version.test.js pins it against the EN game data): the
+  // Infinity name is the fork's, not the game's, so it goes into the README / CHANGELOG instead of here.
   console.log(`\n  卫戍协议：盟约 · Stronghold Protocol: Alliance v${APP_VERSION}`);
   console.log(`  Local:   ${srv.url}`);
   if (srv.host === '0.0.0.0' || srv.host === '::') {

@@ -12,6 +12,12 @@
   "bugs": {
     "url": "https://github.com/Mizuki-OvO/Stronghold-Protocol-Infinity/issues"
   },
+  "upstream": {
+    "name": "Stronghold-Protocol",
+    "url": "https://github.com/sganggs/Stronghold-Protocol",
+    "baseline": "0.1.3",
+    "note": "GPL-3.0-or-later derivative: the game itself, its data pipeline and its docs are the upstream author's work; this fork adds the endless mode, the special items and a local dev modifier."
+  },
   "keywords": [
     "arknights",
     "auto-chess",
