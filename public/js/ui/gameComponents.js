@@ -6,7 +6,7 @@ import { html, Icon, TierChip, Tooltip } from './components.js';
 import { data, useData, localAsset } from '../data.js';
 import { parseRichText, rtClassName } from './richText.js';
 import {
-  uiUrl, chessAvatarUrl, chessPortraitUrl, itemIconUrl, tokenAvatarUrl, enemyIconUrl, bondIconUrl, bandIconUrl,
+  uiUrl, chessAvatarUrl, chessPortraitUrl, itemIconUrl, itemEmoji, tokenAvatarUrl, enemyIconUrl, bondIconUrl, bandIconUrl,
 } from './assetUrls.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
@@ -99,6 +99,11 @@ export function UnitThumb({ kind = 'chess', id, golden, size = 'md', tier, showT
   let src = null;
   let name = '';
   let t = tier;
+  // 无尽模式's special items carry an EMOJI icon and no manifest art. It must be painted as real DOM TEXT, not as an
+  // <img>: an SVG data URL whose <text> holds an emoji does not render reliably in Chrome (the glyph comes out as a
+  // tofu box / "?"), and when the image fails the <Img> fallback shows the name's first character — which is the "?"
+  // the player sees. `emoji` routes it through the text branch below instead.
+  let emoji = null;
   if (kind === 'chess') {
     const c = data.lookup('chess', id);
     src = chessAvatarUrl(m, c);
@@ -107,6 +112,7 @@ export function UnitThumb({ kind = 'chess', id, golden, size = 'md', tier, showT
     golden = golden ?? !!c?.isGolden;
   } else if (kind === 'item') {
     const it = data.lookup('items', id);
+    emoji = itemEmoji(it);
     src = itemIconUrl(m, it);
     name = it?.name || '';
     t = t ?? it?.tier;
@@ -124,7 +130,9 @@ export function UnitThumb({ kind = 'chess', id, golden, size = 'md', tier, showT
   return html`<span class=${cx('uthumb', `uthumb--${size}`, `uthumb--${kind}`, golden && 'is-golden', dim && 'is-dim', t && `uthumb--t${Math.max(1, Math.min(6, t | 0))}`, cls)}
       title=${title ?? name}>
     <span class="uthumb__art">
-      <${Img} src=${src} fallback=${html`<span class="uthumb__glyph">${glyph}</span>`} />
+      ${emoji
+        ? html`<span class="uthumb__emoji" aria-hidden="true">${emoji}</span>`
+        : html`<${Img} src=${src} fallback=${html`<span class="uthumb__glyph">${glyph}</span>`} />`}
     </span>
     ${showTier && t && kind !== 'enemy' && kind !== 'token' ? html`<${TierChip} tier=${t} golden=${golden} size="sm" class="uthumb__tier" />` : null}
     ${kind === 'token' ? html`<span class="uthumb__tag">召唤</span>` : null}

@@ -78,7 +78,10 @@ export const DEFAULTS = Object.freeze({
     // level opens one extra slot that only ever offers `items`.
     shop: {
       maxLevel: 7,
-      priceToMaxLevel: 13,          // the cost of the 6 → 7 upgrade (the five official steps are 5/8/11/12/13)
+      // The 无尽模式-only step 6 → 7. Deliberately NOT the official ladder's last value (13): this level is the loop's
+      // own capstone, so it opens at a steep 20 and then rides the SAME per-round discount every other level does
+      // (PlayerState.startRound: `upgradePrice - 1` every round from R2 on), i.e. it gets cheaper as the loop runs.
+      priceToMaxLevel: 20,
       specialSlots: 1,
       items: [
         {

@@ -115,6 +115,32 @@ test('shop level 7 exists ONLY while the endless loop is live', () => {
   assert.equal(gd.endlessShopItems().length, 6, 'the special items are offered');
 });
 
+test('the 6 → 7 upgrade costs 20, and then rides the per-round discount like every other level', () => {
+  const { h, m, ps } = endlessShopMatch({ level: 6, prep: false });
+  const gd = m.gd;
+  // the official ladder is untouched
+  assert.deepEqual(gd.upgradePrices(), [5, 8, 11, 12, 13], 'the five official steps are unchanged');
+  // the endless-only step is deliberately steeper than the ladder's last value (13)
+  assert.equal(gd.endlessCfg.shop.priceToMaxLevel, 20, 'the endless capstone opens at 20');
+  assert.equal(gd.upgradeBase(6), 20, '6 → 7 costs 20');
+
+  // PlayerState.startRound decrements the standing price by 1 every round from R2 on (the official rule). The endless
+  // step must go through the same path, so a 6-level player sees 20 → 19 → 18 …
+  ps.shop.level = 6;
+  ps.shop.upgradePrice = gd.upgradeBase(6);
+  assert.equal(ps.shop.upgradePrice, 20, 'the standing price after reaching level 6');
+  const seq = [];
+  for (let r = 2; r <= 6; r++) { ps.startRound(r); seq.push(ps.shop.upgradePrice); }
+  assert.deepEqual(seq, [19, 18, 17, 16, 15], `one funds per round (got ${seq.join()})`);
+
+  // it never goes negative, however long the loop runs
+  ps.shop.upgradePrice = 2;
+  for (let r = 20; r <= 30; r++) ps.startRound(r);
+  assert.equal(ps.shop.upgradePrice, 0, 'clamped at 0');
+  void h;
+  m.dispose();
+});
+
 test('the special items are NOT offered outside the loop', () => {
   const gd = new GameData(DATA, 'mode_single_abyss');
   assert.deepEqual(gd.endlessShopItems(), [], 'no special items before the loop');

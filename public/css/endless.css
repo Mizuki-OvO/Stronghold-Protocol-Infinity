@@ -128,18 +128,38 @@
 
 /* ---- endless special items in the shop (public/js/ui/shopBar.js) -------------------------------- */
 
-/* the special items' icon is an emoji, drawn as text (no manifest art exists for them) */
-.scard__emoji {
+/* The special items' icons are EMOJI, painted as real DOM text — never through an <img>.
+   An SVG data URL whose <text> holds an emoji does not render reliably in Chrome (the glyph comes out as a tofu box),
+   and the <Img> fallback then shows the name's first character, i.e. the "?" the player sees. Text also scales with
+   the platform emoji font and keeps full colour. */
+.scard__emoji,
+.uthumb__emoji,
+.dhead__emoji {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
   height: 100%;
-  font-size: 46px;
   line-height: 1;
-  /* the game's own emoji font stack; the OS fallback renders the platform emoji */
+  /* the platform emoji stack: colour emoji on Windows (Segoe UI Emoji), macOS and Android */
   font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+}
+
+.scard__emoji {
+  font-size: 46px;
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .55));
+}
+
+/* the square thumbnail on an operator's equipped-item row (detailPanel ItemRow → UnitThumb); `--ut` is the tile size
+   set by game-panels.css (.uthumb--xs/sm/lg), so the emoji follows the same scale as .uthumb__glyph does */
+.uthumb__emoji {
+  font-size: calc(var(--ut, .72rem) * .62);
+}
+
+/* the big icon in an item's info popup header (.dhead__icon) */
+.dhead__emoji {
+  font-size: 1.5rem;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .5));
 }
 
 /* ---- in-match roundbox (public/js/ui/hud.js) -------------------------------------------------- */

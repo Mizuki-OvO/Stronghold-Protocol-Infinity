@@ -34,7 +34,7 @@
 import { html, Icon, TierChip, MicroLabel, Button, confirmDialog, useTicker } from './components.js';
 import { Img, RichText, UnitThumb, BondGlyph, GIcon } from './gameComponents.js';
 import { attackInterval, rangeGridBox, fmtNum, tileKey, chessLoadout, nextThreshold, bondTier, briefingBondTip, pieceBondIds, grantedBonds, morphPairings } from './gameLogic.js';
-import { chessPortraitUrl, skillIconUrl, skillRecordIconUrl, profIconUrl, subProfIconUrl, itemIconUrl, enemyIconUrl, tokenAvatarUrl, factionIconUrl, uiUrl, moduleTypeIconUrl } from './assetUrls.js';
+import { chessPortraitUrl, skillIconUrl, skillRecordIconUrl, profIconUrl, subProfIconUrl, itemIconUrl, itemEmoji, enemyIconUrl, tokenAvatarUrl, factionIconUrl, uiUrl, moduleTypeIconUrl } from './assetUrls.js';
 import { abilityRows } from './abilityLines.js';
 import { data } from '../data.js';
 import { attackRangeGrid } from '../../../shared/loadoutRecord.js';
@@ -459,9 +459,14 @@ export function ChessDetail({ chess, piece, unit, snapHp, editable, onSell, bond
  */
 export function ItemDetail({ item, piece, editable, onDestroy, offBonds = null }) {
   const m = data.get('assets');
+  // 无尽模式's special items have an EMOJI icon and no manifest art: paint it as DOM text (an SVG data URL with an
+  // emoji inside its <text> does not render reliably in Chrome, and the <Img> fallback then shows a "?").
+  const emoji = itemEmoji(item);
   return html`
     <div class="dhead dhead--item">
-      <div class=${cx('dhead__icon', item.isGolden && 'is-golden')}><${Img} src=${itemIconUrl(m, item)} fallback=${html`<${GIcon} name="bolt" />`} /></div>
+      <div class=${cx('dhead__icon', item.isGolden && 'is-golden')}>${emoji
+        ? html`<span class="dhead__emoji" aria-hidden="true">${emoji}</span>`
+        : html`<${Img} src=${itemIconUrl(m, item)} fallback=${html`<${GIcon} name="bolt" />`} />`}</div>
       <div class="dhead__info">
         <div class="dhead__chips"><${TierChip} tier=${item.tier} golden=${item.isGolden} size="lg" />${item.isGolden ? html`<span class="dtag-elite">进阶</span>` : null}
           <span class="dtag-kind">${item.itemType === 'MAGIC' ? '奇术' : '装备'}</span></div>

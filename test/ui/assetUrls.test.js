@@ -46,8 +46,20 @@ describe('assetUrls', () => {
   test('bonds, bands, items, enemies, tokens, factions, titles, effects', () => {
     for (const id of Object.keys(load('bonds.json'))) assert.ok(bondIconUrl(m, id), id);
     for (const id of Object.keys(load('bands.json'))) assert.ok(bandIconUrl(m, id), id);
-    for (const it of Object.values(load('items.json'))) assert.ok(inManifest(itemIconUrl(m, it)), it.id);
-    assert.ok(itemIconUrl(m, Object.values(load('items.json'))[0]));
+    // 无尽模式's special items are mirrored into items.json for the client but have NO manifest art: their icon is an
+    // emoji served as an SVG data URL (test/ui/endless-item-icon.test.js pins how the UI actually paints them). They
+    // are excluded from the "must resolve to a manifest url" sweep and checked separately.
+    const allItems = Object.values(load('items.json'));
+    const endless = allItems.filter((it) => it.endless === true);
+    const officialItems = allItems.filter((it) => it.endless !== true);
+    assert.ok(endless.length, 'the endless items are in items.json');
+    assert.ok(officialItems.length >= 100, 'and so are the official ones');
+    for (const it of officialItems) assert.ok(inManifest(itemIconUrl(m, it)), it.id);
+    for (const it of endless) {
+      const u = itemIconUrl(m, it);
+      assert.ok(typeof u === 'string' && u.startsWith('data:image/svg+xml,'), `${it.id}: emoji data URL`);
+    }
+    assert.ok(itemIconUrl(m, officialItems[0]));
     const enemies = load('enemies.json');
     let found = 0;
     for (const k of Object.keys(enemies)) { const u = enemyIconUrl(m, k); assert.ok(inManifest(u), k); if (u) found++; }
