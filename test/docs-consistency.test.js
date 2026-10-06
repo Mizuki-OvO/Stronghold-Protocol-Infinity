@@ -850,3 +850,55 @@ test('the deliberate trigger deviation (DESIGN §21.29): six 重装 skills DEFAU
   assert.match(PLAYING, /深巡、雷蛇的二技能，号角的二、三技能，灰毫的一、二技能按玩家反馈改为攻击范围内有敌人时就释放/);
   assert.match(doc('CHANGELOG.md'), /深巡、雷蛇的二技能，号角的二、三技能，灰毫的一、二技能改为攻击范围内有敌人时就释放/);
 });
+
+/**
+ * INFINITY FORK — the numbers this fork's README / CHANGELOG promise must be the numbers the code runs with.
+ *
+ * The endless growth and the duplication chance are the two figures a player checks by playing, so a silent drift
+ * between `DEFAULTS.endless` and the prose would be a real defect rather than a doc nit. The expressions below are
+ * written out here verbatim as they appear in the docs; a change on either side fails this test.
+ */
+test('the endless growth and duplication figures in README / CHANGELOG match the code', () => {
+  const gd = new GameData(DATA, 'mode_single_abyss');
+  gd.setEndlessActive(true);
+  const g = gd.endlessCfg.growth;
+  const dup = gd.endlessCfg.dup;
+  const CH = doc('CHANGELOG.md');
+
+  // README: the compounding line spells out all three multipliers plus the flat resistance
+  const hp = `1.10^(N−15)`;
+  assert.ok(README.includes(`生命 \`${hp}\`、攻击 \`${hp}\`、防御 \`${hp}\``), 'README 的三项倍率都是 1.10^(N−15)');
+  assert.match(README, /法抗每波 \+1 点/);
+  assert.equal(g.hp, 1.1, '代码：生命每波 ×1.10');
+  assert.equal(g.atk, 1.1, '代码：攻击每波 ×1.10');
+  assert.equal(g.def, 1.1, '代码：防御每波 ×1.10');
+  assert.equal(g.res, 1, '代码：法抗每波 +1 点');
+  // CHANGELOG repeats the same numbers
+  assert.match(CH, /`1\.10\^\(N−15\)` 的\*\*生命 \/ 攻击 \/ 防御\*\*/);
+  assert.match(CH, /法抗每波 \+1 点/);
+  // …and the old, smaller values never come back
+  assert.ok(!/1\.05\^\(N−15\)/.test(README), 'README 不再出现旧的 1.05');
+  assert.ok(!/`1\.03\^\(N−15\)` 攻击/.test(CH), 'CHANGELOG 不再出现旧的 1.03 攻击/防御');
+
+  // the duplication chance: (wave / perWaves) * basePercent
+  assert.match(README, /`\(当前无尽波次 ÷ 7\) × 50 %`/, 'README 写明复制概率公式');
+  assert.match(CH, /`\(当前无尽波次 \/ 7\) × 50 %`/, 'CHANGELOG 写明复制概率公式');
+  assert.equal(dup.perWaves, 7, '代码：每 7 波一个循环');
+  assert.equal(dup.basePercent, 50, '代码：基准 50%');
+  // the two prose rules that are easy to get backwards
+  assert.match(README, /一次只多一份，副本不会再被复制/, 'README 说明不会连锁复制');
+  assert.match(README, /领袖波永不复制/, 'README 说明领袖波不复制');
+  assert.equal(gd.endlessDupCopies(gd.endlessFirstRound() + 6, () => 0), 1, '代码：领袖波不复制');
+
+  // the 机变 landing rounds the README promises
+  assert.match(README, /第 \*\*19、26、33、40\*\*… 回合/, 'README 写明机变落点');
+  for (const w of [4, 11, 18, 25]) {
+    const r = gd.endlessFirstRound() + w - 1;
+    assert.equal(gd.isEndlessDraftRound(r), true, `第 ${r} 回合是机变波`);
+    assert.equal(gd.isEndlessBossRound(r), false, `第 ${r} 回合不是领袖波`);
+  }
+  assert.match(CH, /第 \*\*19、26、33、40\*\*… 回合/, 'CHANGELOG 写明机变落点');
+  // …and the stale sequence never comes back
+  assert.ok(!/第 19、22、25、28/.test(README), 'README 不再出现旧的机变落点');
+  assert.ok(!/第 19、22、25、28/.test(CH), 'CHANGELOG 不再出现旧的机变落点');
+});

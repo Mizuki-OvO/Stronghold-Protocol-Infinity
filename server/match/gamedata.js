@@ -61,9 +61,9 @@ export const DEFAULTS = Object.freeze({
     // Per endless wave, applied ON TOP of the official round-14/15 row (gamedata.roundScale, compounding):
     //   hp / atk / def are MULTIPLIERS, res is FLAT points (the official table has no defence or resistance column at
     //   all — both are endless-only, like def; the official table does have res per enemy, so the loop adds to it).
-    // The old values were 1.05 / 1.03 / 1.03 with NOTHING for res: +3 %/wave on defence and attack was far too small to
-    // notice by wave 6 (×1.19), which read as "defence growth does nothing".
-    growth: { hp: 1.10, atk: 1.06, def: 1.06, res: 1 },
+    // hp / atk / def all grow +10 %/wave; the earlier 1.05 / 1.03 / 1.03 was far too small to notice by wave 6
+    // (×1.19 on defence), which read as "defence growth does nothing".
+    growth: { hp: 1.10, atk: 1.10, def: 1.10, res: 1 },
     // Per-wave balance on the player's side, applied when a wave ENDS (settle) from `fromWave` on:
     //   every ALIVE player loses `layerCut` layers from its HIGHEST-layer bond (ties broken at random among the equal
     //   maxima; skipped when that bond holds fewer than `layerCut`), and gains `lpGain` target LP (`maxLp` caps it).
@@ -83,6 +83,17 @@ export const DEFAULTS = Object.freeze({
       cards: null,               // null = the format's own count (solo 3 / multi 6)
       supplyTiers: [4, 6],
     },
+    // ---- enemy duplication in the loop -----------------------------------------------------------------
+    // Every enemy in an endless wave's spawn list has a chance to be duplicated — "不会重复复制" means each listed
+    // entry rolls ONCE and gets at most one extra copy per roll, never a copy of a copy.
+    //
+    //   percent = (endless wave / perWaves) * basePercent        (default: wave / 7 * 50)
+    //
+    // Above 100 % the "每超出一个100%则取不足100%的部分重复计算" rule applies: every full 100 percentage points is one
+    // GUARANTEED copy, and the remainder under 100 is the chance of one more. So wave 14 (exactly 100 %) doubles every
+    // entry, wave 21 (150 %) doubles with a 50 % chance of a third, wave 28 (200 %) triples.
+    // Never applied to a leader wave (the loop's boss): the leader and its escorts are the cycle's climax, not a swarm.
+    dup: { perWaves: 7, basePercent: 50 },
     // ---- endless shop (商店 7 级 + 特殊道具栏) ------------------------------------------------------
     // While the loop is live the shop may reach `maxLevel`; the operator / normal-item odds stay EXACTLY those of
     // level 6 (pool.tierShares caps its tiers at the data's tier count, so a higher level adds no new tiers), and the
@@ -771,7 +782,50 @@ export class GameData {
           supplyTiers: tiers || dDraft.supplyTiers,
         };
       })(),
+      // enemy duplication: percent = (wave / perWaves) * basePercent (see the DEFAULTS comment)
+      dup: (() => {
+        const uRaw = (m.dup && typeof m.dup === 'object' ? m.dup : null)
+          || (c.dup && typeof c.dup === 'object' ? c.dup : null) || d.dup;
+        const dDup = d.dup;
+        return {
+          perWaves: Math.max(1, Number.isInteger(uRaw.perWaves) && uRaw.perWaves > 0 ? uRaw.perWaves : dDup.perWaves),
+          basePercent: Math.max(0, numOr(uRaw.basePercent, dDup.basePercent)),
+        };
+      })(),
     };
+  }
+
+  /**
+   * How many copies of ONE spawn-list entry endless wave `r` makes.
+   *
+   *   percent = (endlessStep(r) / dup.perWaves) * dup.basePercent
+   *
+   * A result of 1 means "no copy", 2 means "the entry spawns twice", and so on. Every full 100 percentage points is a
+   * guaranteed extra copy while the remainder under 100 is the chance of one more — the
+   * "每超出一个100%则取不足100%的部分重复计算" rule. `rng` is called at most once, and only when there is a fractional
+   * part to roll, so the wave builders' random streams stay stable for the rounds that do not duplicate.
+   *
+   * Never on a leader wave: the cycle's boss is a scripted set piece, so the whole cycle's duplication strength is
+   * withheld there (the guard lives here rather than in the caller, so every reader of the formula agrees).
+   *
+   * @param {number} r endless round
+   * @param {() => number} [rng] the wave RNG (absent → the fractional part is skipped, i.e. only whole copies)
+   * @returns {number} total copies of the entry, >= 1
+   */
+  endlessDupCopies(r, rng = null) {
+    if (!this.isEndlessRound(r)) return 1;
+    if (this.isEndlessBossRound(r)) return 1;
+    const cfg = this.endlessCfg.dup;
+    if (!(cfg.basePercent > 0)) return 1;
+    const st = this.endlessStep(r);
+    if (st <= 0) return 1;
+    const percent = (st / cfg.perWaves) * cfg.basePercent;
+    if (!(percent > 0)) return 1;
+    const guaranteed = Math.floor(percent / 100);
+    const rest = percent - guaranteed * 100;      // 0..100
+    let extra = guaranteed;
+    if (rest > 0 && typeof rng === 'function' && rng() * 100 < rest) extra += 1;
+    return 1 + extra;
   }
 
   /**

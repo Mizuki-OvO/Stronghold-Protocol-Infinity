@@ -405,9 +405,12 @@ export function buildNormalWave(gd, rng, factions, round) {
   if (!tpl) return { templateId, spawns: [], routes: [], extraRoutes: [], timeLimit, overrides: {}, pick: null, entries: { ground: null, fly: null }, actions: [] };
   const pick = roundPick(gd, rng, factions, round);
   const { spawns, actions } = templateSpawns(gd, tpl, round, pick);
+  // 无尽模式: every listed enemy may be duplicated (gamedata.endlessDupCopies). Applied to the assembled spawn list, so
+  // the client receives the doubled `count` inside the b.start spec — the browser never builds waves itself.
+  const dupSpawns = applyEndlessDup(gd, spawns, round, rng);
   return {
     templateId,
-    spawns,
+    spawns: dupSpawns,
     routes: Array.isArray(tpl.routes) ? tpl.routes : [],
     extraRoutes: Array.isArray(tpl.extraRoutes) ? tpl.extraRoutes : [],
     timeLimit,
@@ -416,6 +419,34 @@ export function buildNormalWave(gd, rng, factions, round) {
     entries: entriesView(gd, pick),
     actions,
   };
+}
+
+/**
+ * 无尽模式's enemy duplication: for each entry of an endless elite wave's spawn list, roll once and multiply its
+ * `count` by the number of copies. The re-timed `interval` is kept proportional (`window / count`, the same shape
+ * templateSpawns uses), so a doubled entry still spreads evenly across the action's own window instead of bunching up.
+ *
+ * A counterpart on the SERVER's own totals (`total`) is not needed: the sim counts spawns as they are queued.
+ * Never applied to a leader wave, and it is a no-op outside the loop.
+ */
+function applyEndlessDup(gd, spawns, round, rng) {
+  if (!Array.isArray(spawns) || !spawns.length) return spawns;
+  if (!gd.isEndlessRound || !gd.isEndlessRound(round)) return spawns;
+  if (gd.isEndlessBossRound && gd.isEndlessBossRound(round)) return spawns;
+  let any = false;
+  const out = spawns.map((s) => {
+    const copies = gd.endlessDupCopies(round, rng);
+    if (copies <= 1) return s;
+    any = true;
+    const base = Math.max(1, Math.trunc(s.count) || 1);
+    const count = base * copies;
+    // KEEP the entry's own action window: `interval` is the gap between two units, so N× the units means 1/N the gap.
+    // An entry that had a single unit (interval 0) has no gap to shrink — its copies share the same moment, exactly
+    // like a template's own multi-unit action with interval 0.
+    const interval = s.interval > 0 ? s.interval / copies : 0;
+    return { ...s, count, interval, dup: copies };
+  });
+  return any ? out : spawns;
 }
 
 /**

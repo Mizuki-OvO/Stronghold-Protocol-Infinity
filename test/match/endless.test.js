@@ -71,7 +71,7 @@ test('endless scale: compounding growth stacked on the LAST official round', () 
     const base = gd.baseEnemyScale(last);
     const g = gd.endlessCfg.growth;
     // per endless wave: hp / atk / def are MULTIPLIERS, res is FLAT points (the official table has no def or res column)
-    assert.deepEqual(g, { hp: 1.1, atk: 1.06, def: 1.06, res: 1 }, `${modeId}: default growth`);
+    assert.deepEqual(g, { hp: 1.1, atk: 1.1, def: 1.1, res: 1 }, `${modeId}: default growth`);
 
     for (const st of [1, 2, 5, 7, 20, 85]) {
       const r = first + st - 1;                    // endless wave `st`
@@ -89,18 +89,28 @@ test('endless scale: compounding growth stacked on the LAST official round', () 
 });
 
 test('endless growth: the four stats grow by the documented per-wave amounts', () => {
-  // The numbers the README / CHANGELOG promise: 生命 +10% / 防御 +6% / 攻击 +6% / 法抗 +1 per wave.
+  // The numbers the README / CHANGELOG promise: 生命 +10% / 防御 +10% / 攻击 +10% / 法抗 +1 per wave.
   const gd = endlessGd();
   const g = gd.endlessCfg.growth;
   assert.equal(g.hp, 1.1, '生命每波 +10%');
-  assert.equal(g.def, 1.06, '防御每波 +6%');
-  assert.equal(g.atk, 1.06, '攻击每波 +6%');
+  assert.equal(g.def, 1.1, '防御每波 +10%');
+  assert.equal(g.atk, 1.1, '攻击每波 +10%');
   assert.equal(g.res, 1, '法抗每波 +1');
   // the cumulative shape that used to read as "defence growth does nothing"
   const at = (st) => gd.enemyScale(gd.endlessFirstRound() + st - 1);
-  assert.ok(Math.abs(at(6).defMul - Math.pow(1.06, 6)) < 1e-6, '第 6 波防御 ×1.42');
-  assert.ok(at(6).defMul > 1.4, 'clearly above the old 1.19');
+  assert.ok(Math.abs(at(6).defMul - Math.pow(1.1, 6)) < 1e-6, '第 6 波防御 ×1.77');
+  assert.ok(at(6).defMul > 1.7, 'clearly above the old 1.19');
   assert.equal(at(6).resFlat, 6, '第 6 波法抗 +6');
+  // hp / atk carry the official last-round base multiplier, def starts from 1 — but all three compound with the
+  // SAME factor, so their ratio to that base is identical wave by wave. The scale values go through Math.fround,
+  // which at step 30 (≈ ×17) leaves a few ULPs of slack, hence the relative tolerance.
+  const base = gd.baseEnemyScale(gd.lastRound);
+  const near = (a, b, why) => assert.ok(Math.abs(a - b) <= 1e-6 * Math.max(1, b), `${why}（${a} vs ${b}）`);
+  for (const st of [1, 3, 7, 14, 30]) {
+    const s = at(st);
+    near(s.hpMul / base.hpMul, s.defMul, `第 ${st} 波 生命/防御 用同一个成长因子`);
+    near(s.atkMul / base.atkMul, s.defMul, `第 ${st} 波 攻击/防御 用同一个成长因子`);
+  }
   // config can switch the resistance growth off entirely
   const off = new GameData(DATA, 'mode_single_abyss');
   off.setEndlessActive(true);
@@ -142,6 +152,179 @@ test('roundScale is a pure function of the row it wraps', () => {
   const s = roundScale(12, fake);          // the second endless wave: step 2
   assert.equal(s.endless, 2);
   assert.equal(s.hpMul, Math.fround(10 * 1.05 ** 2));
+});
+
+// ---------------------------------------------------------------------------------------------------
+// 1b. the duplication of listed enemies (gamedata.endlessDupCopies + waves.applyEndlessDup)
+// ---------------------------------------------------------------------------------------------------
+
+/** Round number of endless wave `w` (1-based) for a ready gd. */
+function waveRound(gd, w) {
+  return gd.endlessFirstRound() + w - 1;
+}
+
+test('endless duplication: probability is (wave / 7) * 50 %, full hundreds guaranteed', () => {
+  const gd = endlessGd();
+  const { perWaves, basePercent } = gd.endlessCfg.dup;
+  assert.deepEqual(gd.endlessCfg.dup, { perWaves: 7, basePercent: 50 }, 'default configuration');
+  const no = () => 0.999999;   // never rolls in
+  const yes = () => 0;         // always rolls in
+  const at = (w, rng) => gd.endlessDupCopies(waveRound(gd, w), rng);
+  /** The documented formula, restated independently of the implementation. */
+  const percent = (w) => (w / perWaves) * basePercent;
+
+  // Wave 1 sits at 7.14 %: at most one extra copy, and only on the low end of the roll.
+  assert.equal(at(1, yes), 2, '第 1 波 7.14%：掷中则复制 1 份');
+  assert.equal(at(1, no), 1, '第 1 波 7.14%：掷不中则不复制');
+  // …and it is the ONE extra copy that is at stake, never a chain: one roll, at most one copy.
+  for (const w of [1, 6, 8, 13, 20, 22]) {
+    assert.ok(at(w, yes) <= 1 + Math.ceil(percent(w) / 100), `第 ${w} 波掷中也不会多出第二次复制`);
+  }
+
+  // Every elite wave of the first five cycles: agreement with the formula, no hard-coded rung list.
+  let checked = 0;
+  for (let w = 1; w <= 35; w++) {
+    const r = waveRound(gd, w);
+    if (gd.isEndlessBossRound(r)) {
+      // the leader wave withholds the whole cycle's strength, whatever the rung would have been
+      assert.equal(at(w, yes), 1, `第 ${w} 波（领袖波）不复制`);
+      assert.equal(at(w, no), 1, `第 ${w} 波（领袖波）不复制`);
+      continue;
+    }
+    checked++;
+    const p = percent(w);
+    const guaranteed = Math.floor(p / 100);
+    const rest = p - guaranteed * 100;
+    // a roll below the remainder adds the one non-guaranteed copy, a roll above it does not
+    const onRest = rest > 0 ? 1 : 0;
+    assert.equal(at(w, yes), 1 + guaranteed + onRest, `第 ${w} 波 ${p.toFixed(2)}%：掷中`);
+    assert.equal(at(w, no), 1 + guaranteed, `第 ${w} 波 ${p.toFixed(2)}%：掷不中`);
+  }
+  assert.ok(checked >= 25, `至少覆盖 25 个精英波（实际 ${checked}）`);
+
+  // The rungs the user cares about, spelled out: 100 % at wave 14 (a leader wave), 150 %-class at wave 20/22,
+  // and the additive rule "每超出一个100%则取不足100%的部分重复计算" — 150 % = one guaranteed + a 50 % roll.
+  assert.equal(gd.isEndlessBossRound(waveRound(gd, 14)), true, '第 14 波（100% 档）恰好是领袖波');
+  assert.equal(at(20, () => 0.2), 3, '第 20 波 142.86%：保底 1 + 42.86% 再 1');
+  assert.equal(at(20, () => 0.8), 2, '第 20 波 142.86%：保底 1');
+  assert.equal(at(22, () => 0.5), 3, '第 22 波 157.14%：保底 1 + 57.14% 再 1');
+  assert.equal(at(22, () => 0.9), 2, '第 22 波 157.14%：保底 1');
+  // wave 29 is at 207.14 %: two guaranteed copies plus a 7.14 % roll, so three
+  assert.equal(at(29, yes), 4, '第 29 波 207.14%：保底 2 + 7.14% 再 1');
+  assert.equal(at(29, no), 3, '第 29 波 207.14%：保底 2');
+});
+
+test('endless duplication: never outside the loop, never on a leader wave', () => {
+  const gd = endlessGd();
+  const yes = () => 0;
+  // every official round and the Hidden Core
+  for (let r = 1; r <= gd.endlessFirstRound() - 1; r++) {
+    assert.equal(gd.endlessDupCopies(r, yes), 1, `R${r} 不在无尽循环内，不复制`);
+  }
+  // the boss round of every cycle
+  for (let c = 0; c < 5; c++) {
+    const boss = waveRound(gd, 7 + c * (gd.endlessCfg.eliteRounds + 1));
+    assert.equal(gd.isEndlessBossRound(boss), true, `R${boss} 是领袖波`);
+    assert.equal(gd.endlessDupCopies(boss, yes), 1, `R${boss} 领袖波不复制`);
+  }
+  // …and a boss wave is never also a draft wave (机变 fires after wave 3, the boss sits at cycle position 6)
+  for (let c = 0; c < 5; c++) {
+    const boss = waveRound(gd, 7 + c * (gd.endlessCfg.eliteRounds + 1));
+    assert.equal(gd.isEndlessDraftRound(boss), false, `R${boss} 不叠加机变`);
+  }
+  // the 机变 lands on cycle position 3, i.e. on the wave right after the third one
+  for (let c = 0; c < 5; c++) {
+    const d = waveRound(gd, 4 + c * (gd.endlessCfg.eliteRounds + 1));
+    assert.equal(gd.isEndlessDraftRound(d), true, `R${d} 是机变波`);
+    assert.equal(gd.endlessCyclePos(d), 3, `R${d} 位于一圈的第 4 波`);
+  }
+  // disabled entirely
+  const off = endlessGd();
+  off.config = { ...off.config, endless: { dup: { basePercent: 0 } } };
+  assert.equal(off.endlessDupCopies(waveRound(off, 40), yes), 1, 'basePercent 0 时关闭复制');
+});
+
+test('endless duplication: the long-run average matches the formula', () => {
+  const gd = endlessGd();
+  const rng = createRng(20240607);
+  // elite waves only — wave 7 / 14 / 21 … are leader waves and never duplicate
+  for (const [w, want] of [[1, 1.0714], [6, 1.4286], [8, 1.5714], [11, 1.7857], [13, 1.9286], [15, 2.0714]]) {
+    const r = waveRound(gd, w);
+    assert.equal(gd.isEndlessBossRound(r), false, `第 ${w} 波不是领袖波`);
+    const n = 40000;
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += gd.endlessDupCopies(r, rng);
+    const avg = sum / n;
+    assert.ok(Math.abs(avg - want) < 0.03, `第 ${w} 波平均 ${avg.toFixed(3)} 份，理论 ${want}`);
+  }
+});
+
+test('endless duplication: a real wave multiplies the listed counts and re-times the interval', () => {
+  const gd = endlessGd();
+  const factions = scheduledFactions(gd);
+  const r = waveRound(gd, 11);                       // 78.57 %: every entry rolls once, most get one copy
+  const wave = buildNormalWave(gd, createRng(7000), factions, r);
+  assert.ok(wave.spawns.length > 0, '第 14 波有出怪条目');
+  // The identical run with the mechanic switched off: the pick / template consume rng BEFORE the duplication, so the
+  // two waves are structurally identical and every entry lines up 1:1.
+  const off = endlessGd();
+  off.config = { ...off.config, endless: { dup: { basePercent: 0 } } };
+  const ref = buildNormalWave(off, createRng(7000), scheduledFactions(off), r);
+  assert.equal(wave.templateId, ref.templateId, '开关不影响模板选择');
+  assert.equal(wave.spawns.length, ref.spawns.length, '复制不新增条目，只改数量');
+  let duplicated = 0;
+  for (let i = 0; i < wave.spawns.length; i++) {
+    const s = wave.spawns[i];
+    const b = ref.spawns[i];
+    assert.equal(s.enemyKey, b.enemyKey, `条目 ${i} 敌人种类不变（只加数量）`);
+    assert.equal(s.mods.hpMul, b.mods.hpMul, `条目 ${i} 成长数值不受复制影响`);
+    assert.equal(s.mods.defMul, b.mods.defMul, `条目 ${i} 成长数值不受复制影响`);
+    if (s.dup === undefined) {
+      // this entry lost its roll: it must be bit-for-bit the un-duplicated entry
+      assert.equal(s.count, b.count, `条目 ${i} 未复制时出怪数不变`);
+      assert.equal(s.interval, b.interval, `条目 ${i} 未复制时间隔不变`);
+      continue;
+    }
+    duplicated++;
+    assert.equal(s.dup, 2, `条目 ${i}（${s.enemyKey}）被复制 1 份（78.57% 只可能复制 1 份）`);
+    assert.equal(s.count, b.count * 2, `条目 ${i} 出怪数翻倍`);
+    if (b.interval > 0) {
+      assert.ok(Math.abs(s.interval - b.interval / 2) < 1e-9, `条目 ${i} 间隔减半，窗口不变`);
+    } else {
+      assert.equal(s.interval, 0, `条目 ${i} 原本单只、间隔 0 时保持 0`);
+    }
+  }
+  assert.ok(duplicated > 0, `78.57% 的波次里至少有一个条目被复制（实际 ${duplicated} 个）`);
+});
+
+test('endless duplication: a real wave never lists fewer enemies than the same wave without it', () => {
+  const gd = endlessGd();
+  const factions = scheduledFactions(gd);
+  const off = endlessGd();
+  off.config = { ...off.config, endless: { dup: { basePercent: 0 } } };
+  const foes = (cfgGd, w) => {
+    const wave = buildNormalWave(cfgGd, createRng(7000 + w), factions, waveRound(gd, w));
+    return wave.spawns.reduce((s, x) => s + (x.count || 0), 0);
+  };
+  // Both runs share the seed, so the pick / template draw is identical: the ONLY difference is the duplication. A
+  // single cycle is enough — waves 1..6 walk one template order and every cycle reuses it, so the shape repeats.
+  for (let w = 1; w <= 7; w++) {
+    const withDup = foes(gd, w);
+    const without = foes(off, w);
+    assert.ok(withDup > 0, `第 ${w} 波有敌人`);
+    assert.ok(withDup >= without, `第 ${w} 波（${withDup} 只）不少于未复制版本（${without} 只）`);
+    if (w <= 6) assert.ok(gd.endlessDupCopies(waveRound(gd, w), () => 0) >= 1, `第 ${w} 波复制份数 ≥ 1`);
+  }
+});
+
+test('endless duplication: leader waves are left completely alone', () => {
+  const gd = endlessGd();
+  const factions = scheduledFactions(gd);
+  const boss = waveRound(gd, 7);
+  const wave = buildBossWave(gd, createRng(3), factions, boss, { bossId: gd.endlessBossWeights()[0][0], solo: true });
+  for (const s of wave.spawns) {
+    assert.equal(s.dup, undefined, `${s.enemyKey} 领袖波没有复制标记`);
+  }
 });
 
 // ---------------------------------------------------------------------------------------------------
@@ -747,6 +930,94 @@ test('the round map is what the loop is built on: R14 boss, R15 core, R16 first 
 // ---------------------------------------------------------------------------------------------------
 // 12. the loop's own boss wave (the 7th wave of every cycle) must enter the boss flow, and the wave AFTER
 //     it must be the next cycle — not the Hidden Core again.
+// ---------------------------------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------------------------------
+// 12b. the duplication reaches the CLIENT's own battle spec (the browser never builds waves itself, so
+//      `b.start.spec.spawns` is the only place the player can actually feel the copies)
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * An endless match in CLIENT-COMBAT mode (the production default), positioned on endless wave `wave` with the round
+ * REALLY OPENED — `startRound` is what builds `m.wave` (Match.js), so assigning `m.round` alone would leave the wave of
+ * endless wave 1 in place and every assertion about the wave's contents would silently test the wrong round.
+ *
+ * `b.start` only goes out when the client runs its own battle (the production default), which is why the drives above
+ * never see one: they use the harness's legacy server-run mode. One human + one bot keeps this cheap.
+ */
+function endlessClientCombatAt(wave, { seed = 37 } = {}) {
+  const h = makeMatch({ mode: 'coop', difficulty: 'ABYSS', humans: 1, bots: 1, seed, clientCombat: true });
+  h.start();
+  const m = h.m;
+  m.hiddenReached = true;
+  m.phase = PHASE.HIDDEN_CORE;
+  m.enterEndlessPrompt();
+  m.answerEndless(m.players.get('p_0'), true);        // → _beginEndless → startRound(16)
+  for (const ps of m.players.values()) ps.lp = 99999; // survive whatever the rounds throw at the board
+  const round = m.gd.endlessFirstRound() + wave - 1;
+  if (round !== m.round) m.startRound(round);         // opens the round and builds ITS wave
+  assert.equal(m.round, round, `回合已开到无尽第 ${wave} 波（R${round}）`);
+  const starts = [];
+  h.onSend.push((pid, msg) => { if (msg.t === 'b.start' && msg.authoritative) starts.push(msg); });
+  // open the round's prep phase (the round-start deadline fires here, exactly as it does in a real match)
+  const ok = h.drive(() => m.phase !== PHASE.ROUND_START, { maxSteps: 2e5 });
+  assert.ok(ok, `R${round} 的 ROUND_START 没有推进（停在 ${m.phase}）`);
+  return { h, starts, m, round };
+}
+
+test('the duplication shows up in the b.start spec the client receives', () => {
+  // Wave 15 sits at 107.14 %: one copy is GUARANTEED on every entry, so this assertion cannot depend on a lucky roll
+  // (wave 1 is only 7.14 %, which a given seed usually misses).
+  const { h, starts, m, round } = endlessClientCombatAt(15);
+  // the wave the round really built, before any client sees it
+  const spawns = m.wave.spawns;
+  assert.ok(spawns.length > 0, '无尽第 15 波有出怪条目');
+  // wave 15 = 107.14 %: one copy GUARANTEED on every entry, plus a 7.14 % roll for a second one on each entry
+  for (const s of spawns) {
+    assert.ok(s.dup === 2 || s.dup === 3, `${s.enemyKey}: 复制份数 ${s.dup} 只能是 2（保底）或 3（零头掷中）`);
+  }
+  assert.equal(spawns[0].mods.defMul, Math.fround(1.1 ** 15), '第 15 波防御成长 = 1.1^15');
+  assert.equal(spawns[0].mods.resFlat, 15, '第 15 波法抗 +15 点');
+
+  for (const ps of m.alivePlayers()) if (!ps.ready) m.handle(ps.playerId, { t: 'g.ready', ready: true });
+  h.run(() => m.phase !== PHASE.PREP, { maxSteps: 2e6 });
+
+  const start = starts.find((x) => x.spec && x.spec.round === round && x.kind === 'normal');
+  assert.ok(start, `无尽第 15 波（R${round}）开出了 b.start（收到 ${starts.length} 条）`);
+  const spec = start.spec;
+  assert.equal(spec.spawns.length, spawns.length, '客户端拿到的条目数与服务端一致');
+  // `_sanitizeSpawns` copies entries with a spread, so the marker the wave builder set survives the trip
+  assert.equal(spec.spawns.filter((s) => s.dup).length, spawns.length,
+    `第 15 波（107.14%）保底：全部 ${spawns.length} 个条目都复制`);
+  for (let i = 0; i < spec.spawns.length; i++) {
+    const s = spec.spawns[i];
+    assert.equal(s.dup, spawns[i].dup, `${s.enemyKey}: 客户端收到的复制份数与服务端一致`);
+    assert.equal(s.count, spawns[i].count, `${s.enemyKey}: 客户端收到的出怪数与服务端一致`);
+    assert.ok(s.count >= 2, `${s.enemyKey}: 出怪数 ${s.count} 已翻倍`);
+    assert.ok(s.mods && typeof s.mods === 'object', `${s.enemyKey}: 副本条目仍带 mods（成长倍率）`);
+    assert.equal(s.mods.resFlat, 15, `${s.enemyKey}: 法抗成长随条目一起下发`);
+  }
+  m.dispose();
+});
+
+test('the duplication never reaches a boss field', () => {
+  const { h, starts, m } = endlessClientCombatAt(7);   // endless wave 7 = round 22
+  assert.equal(m.gd.isEndlessBossRound(m.round), true, 'R22 是循环领袖波');
+  assert.equal(m.wave, null, '领袖波没有普通出怪列表');
+  assert.ok(m.bossWaves && m.bossWaves.length, '领袖波计划了领袖出怪');
+  for (const ps of m.alivePlayers()) if (!ps.ready) m.handle(ps.playerId, { t: 'g.ready', ready: true });
+  h.run(() => m.phase !== PHASE.PREP, { maxSteps: 2e6 });
+  assert.equal(m.phase, PHASE.FINAL_ASSAULT, '进入了领袖战');
+  assert.ok(starts.length, `领袖战开出了 b.start（收到 ${starts.length} 条）`);
+  for (const x of starts) {
+    const marked = (x.spec.spawns || []).filter((s) => s.dup);
+    assert.equal(marked.length, 0, `领袖波 R${x.spec.round} 有 ${marked.length} 个条目被复制（应永不复制）`);
+  }
+  m.dispose();
+});
+
+// ---------------------------------------------------------------------------------------------------
+// 13. tests that the code behaves, not just that it is written
 // ---------------------------------------------------------------------------------------------------
 
 /** Reach PREP of endless wave `wave` by really running the rounds (virtual time drives combat for us). */
