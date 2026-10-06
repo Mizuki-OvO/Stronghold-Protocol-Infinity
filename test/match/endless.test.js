@@ -155,19 +155,66 @@ test('endless elite rounds never resolve a leader template', () => {
     assert.ok(tpl.kind !== 'boss' && tpl.kind !== 'hidden', `${t} is not a leader template`);
     assert.ok(!tpl.spawns.some((s) => s.tag === 'boss' || s.tag === 'part'), `${t} spawns no leader/part`);
   }
-  // deterministic, and every candidate template is reachable: the walk continues across cycles
-  const n = tpls.length;
-  const cycles = Math.ceil(n / gd.endlessCfg.eliteRounds) + 1;
-  const used = new Set();
-  for (let c = 0; c < cycles; c++) {
-    for (let i = 0; i < gd.endlessCfg.eliteRounds; i++) {
-      const r = gd.endlessFirstRound() + c * (gd.endlessCfg.eliteRounds + 1) + i;
-      used.add(gd.endlessEliteTemplate(r));
-    }
-  }
-  assert.equal(used.size, n, `every one of the ${n} candidate templates is used within ${cycles} cycles`);
   // the same round always resolves the same template
   assert.equal(gd.endlessEliteTemplate(gd.endlessFirstRound()), gd.endlessEliteTemplate(gd.endlessFirstRound()));
+});
+
+// ---------------------------------------------------------------------------------------------------
+// 2b. the loop's 6 elite waves mirror the official elite rounds 8…13 IN ORDER, every cycle
+// ---------------------------------------------------------------------------------------------------
+
+test('the elite waves follow rounds 8–13 in order, and the same wave number repeats every cycle', () => {
+  for (const modeId of MODES) {
+    const gd = endlessGd(modeId);
+    const cycle = gd.endlessCfg.eliteRounds + 1;          // 6 elite + 1 boss
+    const first = gd.endlessFirstRound();
+
+    // the template list IS the official 8…13 ladder, in wave order
+    const official = [];
+    for (const r of gd.endlessCfg.eliteTemplateRounds) official.push(gd.roundCfg(r).template);
+    assert.deepEqual(official, gd.endlessEliteTemplates(),
+      `${modeId}: the wave templates are rounds 8…13's, in order`);
+
+    // wave k of EVERY cycle resolves the same template as cycle 1's wave k (no cross-cycle rotation)
+    for (let c = 0; c < 4; c++) {
+      for (let p = 0; p < gd.endlessCfg.eliteRounds; p++) {
+        const r = first + c * cycle + p;
+        assert.equal(gd.endlessEliteTemplate(r), official[p],
+          `${modeId}: cycle ${c + 1} wave ${p + 1} (R${r}) mirrors round ${gd.endlessCfg.eliteTemplateRounds[p]}`);
+      }
+      // the boss position never asks for an elite template
+      assert.equal(gd.isEndlessBossRound(first + c * cycle + gd.endlessCfg.eliteRounds), true,
+        `${modeId}: cycle ${c + 1} wave 7 is the boss`);
+    }
+
+    // the loop's own first wave is round 8's composition, NOT round 1's (the pre-fix behaviour picked
+    // act1autochess_01..06 for the first cycle, which are the normal-round templates)
+    assert.equal(gd.endlessEliteTemplate(first), gd.roundCfg(8).template, `${modeId}: wave 1 = round 8`);
+    assert.notEqual(gd.endlessEliteTemplate(first), gd.roundCfg(1).template, `${modeId}: not round 1's template`);
+  }
+});
+
+test('every wave of the loop fields only the round’s elite enemies (no normal key leaks through)', () => {
+  // The h01–h06 templates still carry N / NF / S placeholder slots; waves.js `escalate` must resolve every one of them
+  // to the pick's ELITE key. This is the reason a normal-round template is safe to reuse for an endless wave.
+  const gd = endlessGd();
+  const factions = scheduledFactions(gd);
+  const first = gd.endlessFirstRound();
+  for (let c = 0; c < 2; c++) {
+    for (let p = 0; p < gd.endlessCfg.eliteRounds; p++) {
+      const r = first + c * (gd.endlessCfg.eliteRounds + 1) + p;
+      const w = buildNormalWave(gd, createRng(1000 + r), factions, r);
+      assert.equal(w.templateId, gd.endlessEliteTemplate(r), `R${r}: built from the mapped template`);
+      assert.ok(w.pick, `R${r}: has a pick`);
+      const keys = w.spawns.map((s) => String(s.key ?? s.enemyKey ?? s.id ?? ''));
+      assert.ok(keys.length > 0, `R${r}: spawns something`);
+      if (w.pick.normal) {
+        assert.ok(!keys.includes(w.pick.normal), `R${r}: the NORMAL key ${w.pick.normal} never spawns`);
+      }
+      // every key in the wave is the pick's elite (or an escort literal), never a bare normal one
+      assert.equal(new Set(keys).size, 1, `R${r}: one enemy kind only (got ${[...new Set(keys)].join(',')})`);
+    }
+  }
 });
 
 // ---------------------------------------------------------------------------------------------------

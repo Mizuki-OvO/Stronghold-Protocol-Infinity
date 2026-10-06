@@ -50,8 +50,14 @@ export const DEFAULTS = Object.freeze({
   // shared leader hp pool. All of it is overridable from config.json `endless` / `modes[*].endless`.
   endless: {
     eliteRounds: 6,
-    eliteTemplates: ['act1autochess_h01', 'act1autochess_h02', 'act1autochess_h03',
-      'act1autochess_h04', 'act1autochess_h05', 'act1autochess_h06'],
+    // The endless loop's 6 elite waves mirror the official run's 6 elite rounds IN ORDER: wave 1 = round 8's template
+    // (h01), wave 2 = round 9's (h02), … wave 6 = round 13's (h06), then the cycle repeats. So cycle N's wave K always
+    // fields the same composition as cycle 1's wave K; the difficulty difference comes from the compounding
+    // multipliers (gamedata.roundScale), not from swapping templates.
+    eliteTemplateRounds: [8, 9, 10, 11, 12, 13],
+    // An explicit template list instead of `eliteTemplateRounds` (null = derive from those rounds). Kept as an escape
+    // hatch for the 数值修改器 / a config override; must hold `eliteRounds` usable templates to take effect.
+    eliteTemplates: null,
     growth: { hp: 1.05, atk: 1.03, def: 1.03 },
     // Per-wave balance on the player's side, applied when a wave ENDS (settle) from `fromWave` on:
     //   every ALIVE player loses `layerCut` layers from its HIGHEST-layer bond (ties broken at random among the equal
@@ -702,8 +708,18 @@ export class GameData {
     const bDefault = d.balance;
     return {
       eliteRounds: Math.max(1, Math.min(20, Number.isInteger(pick('eliteRounds')) ? pick('eliteRounds') : d.eliteRounds)),
-      eliteTemplates: Array.isArray(pick('eliteTemplates')) && pick('eliteTemplates').length
-        ? pick('eliteTemplates') : d.eliteTemplates,
+      // The official rounds whose templates the loop's elite waves mirror, in wave order (null = derive instead).
+      eliteTemplateRounds: (() => {
+        const raw = pick('eliteTemplateRounds');
+        if (!Array.isArray(raw)) return null;
+        const rs = raw.filter((n) => Number.isInteger(n) && n > 0);
+        return rs.length ? rs : null;
+      })(),
+      // An explicit pin for the wave templates (null when unset). Always an ARRAY here, so callers can read `.length`.
+      eliteTemplates: (() => {
+        const raw = pick('eliteTemplates');
+        return Array.isArray(raw) ? raw.filter((id) => typeof id === 'string' && id) : [];
+      })(),
       growth: {
         hp: Math.max(1, numOr(gRaw.hp, d.growth.hp)),
         atk: Math.max(1, numOr(gRaw.atk, d.growth.atk)),
@@ -790,52 +806,73 @@ export class GameData {
   }
 
   /**
-   * Can this match offer the endless loop? It needs an official Hidden Core (so there is a "cleared the core"
-   * moment to offer it after) and an endless configuration with a boss pool to draw from.
+   * Can this match offer the endless loop? It needs an official Hidden Core (so there is a "cleared the core" moment to
+   * offer it after), at least one usable elite-wave template, and a boss pool to draw from.
+   *
+   * The template test asks the RESOLVED list (endlessEliteTemplates), not the raw config: the waves normally come from
+   * `endless.eliteTemplateRounds` (the official rounds 8…13) with `eliteTemplates` left empty as a pin/escape hatch.
    */
   isEndlessAvailable() {
     if (this.hiddenRound == null) return false;
-    if (!this.endlessCfg.eliteTemplates.length) return false;
+    if (!this.endlessEliteTemplates().length) return false;
     return this.endlessBossWeights().length > 0;
   }
 
   /**
-   * Templates usable for an endless ELITE round: those whose placeholder slots are ALL elite or special class.
+   * Is `id` a template an endless ELITE wave may use? Leader templates are out entirely (their leader is a LITERAL
+   * key with no tag, so a tag-only check would let them through and every "elite" round would spawn a boss), and the
+   * template must actually hold at least one spawn slot.
    *
-   * The h01–h06 normal-round templates look elite-heavy but still carry N / NF / S slots (measured: h01 has 5 N and
-   * 4 NF actions), so they would spawn normal enemies in an endless round. The h07 / act2 h07 boss templates are the
-   * elite-only ones (E + EF plus literal escort keys). Derived from the data rather than hardcoded so a data update
-   * cannot silently let normal enemies into the loop; config `endless.eliteTemplates` overrides it when set.
+   * Normal-class placeholder slots (N / NF / S) are fine: an endless elite round escalates EVERY placeholder to the
+   * round's elite pick (waves.js templateSpawns `escalate`), so no normal enemy can spawn from them.
+   */
+  endlessEliteTemplateOk(id) {
+    const tpl = this.wave(id);
+    const list = Array.isArray(tpl && tpl.spawns) ? tpl.spawns : [];
+    if (!list.length) return false;
+    const kind = tpl.kind || 'normal';
+    if (kind === 'boss' || kind === 'hidden') return false;
+    for (const s of list) {
+      if (!s || (s.action && String(s.action).toUpperCase() !== 'SPAWN')) continue;
+      const tag = s.tag || null;
+      if (tag === 'boss' || tag === 'part') return false;
+      const key = s.key !== undefined ? s.key : s.enemyKey;
+      if (typeof key === 'string' && key) return true;
+    }
+    return false;
+  }
+
+  /**
+   * The templates of the endless loop's elite waves, in wave order (wave 1 first), repeating every cycle.
+   *
+   * The loop's 6 elite waves mirror the 6 elite rounds of the official run **in order**: wave 1 = round 8's template
+   * (h01), wave 2 = round 9's (h02), … wave 6 = round 13's (h06), and then the cycle starts over — so cycle 2's wave 1
+   * is h01 again, not a continuation of some wider rotation. Difficulty is carried by the compounding stat multipliers
+   * (gamedata.roundScale), not by swapping templates, so the same wave number always means the same enemy composition.
+   *
+   * `endless.eliteTemplateRounds` picks the official rounds to mirror (default 8…13 = the six elite rounds);
+   * `endless.eliteTemplates` pins an explicit template list instead. Anything unusable falls back to the derived
+   * elite-capable list, so a data update can never empty the loop.
    */
   endlessEliteTemplates() {
-    const ph = (this.factions.generation && this.factions.generation.placeholders) || {};
-    const out = [];
-    for (const [id, tpl] of Object.entries(this.raw.waves || {})) {
-      const list = Array.isArray(tpl && tpl.spawns) ? tpl.spawns : [];
-      if (!list.length) continue;
-      // Leader templates are out entirely: their leader is a LITERAL key (no tag), so a tag-only check would let
-      // them through and every "elite" round would spawn the boss itself.
-      const kind = tpl.kind || 'normal';
-      if (kind === 'boss' || kind === 'hidden') continue;
-      let usable = true, hasElite = false;
-      for (const s of list) {
-        if (!s || (s.action && String(s.action).toUpperCase() !== 'SPAWN')) continue;
-        const tag = s.tag || null;
-        if (tag === 'boss' || tag === 'part') { usable = false; break; }
-        const key = s.key !== undefined ? s.key : s.enemyKey;
-        if (typeof key !== 'string') continue;
-        const p = ph[key];
-        if (!p) continue;                                     // literal escort keys are allowed
-        if (p.cls === 'elite' || p.cls === 'special') { hasElite = true; continue; }
-        // A normal slot is allowed: endlessEscalate fills N / NF from the round's elite pick, so no normal enemy
-        // spawns anyway (waves.js templateSpawns override).
-        hasElite = true;
-      }
-      if (usable && hasElite) out.push(id);
+    const cfg = this.endlessCfg;
+    if (Array.isArray(cfg.eliteTemplates) && cfg.eliteTemplates.length) {
+      const pinned = cfg.eliteTemplates.filter((id) => this.endlessEliteTemplateOk(id));
+      if (pinned.length) return pinned;
     }
-    out.sort();
-    const cfg = this.endlessCfg.eliteTemplates;
-    return out.length ? out : cfg;
+    const rounds = Array.isArray(cfg.eliteTemplateRounds) ? cfg.eliteTemplateRounds : [];
+    const out = [];
+    for (const r of rounds) {
+      const rc = this.roundCfg(r);
+      const id = rc && typeof rc.template === 'string' ? rc.template : null;
+      if (id && this.endlessEliteTemplateOk(id)) out.push(id);
+    }
+    if (out.length) return out;
+    // fallback: every elite-capable template in the data, in id order (the pre-8-13 behaviour)
+    const all = [];
+    for (const id of Object.keys(this.raw.waves || {})) if (this.endlessEliteTemplateOk(id)) all.push(id);
+    all.sort();
+    return all;
   }
 
   /** Cycle position of endless round r: 0-based wave inside the elite + boss cycle. */
@@ -881,15 +918,18 @@ export class GameData {
   }
 
   /**
-   * Template of an endless ELITE round: walks the template list across CYCLES as well as positions, so every
-   * candidate is used (the list holds ~15 templates while a cycle only has `eliteRounds` elite positions — taking
-   * only `cyclePos` would leave most of them unreachable forever).
+   * Template of an endless ELITE wave: the cycle position picks the entry of `endlessEliteTemplates()` (wave 1 = the
+   * first entry), so the SAME wave number always fields the SAME composition — cycle 1's wave 1 and cycle 3's wave 1
+   * are both round 8's template. The difficulty difference between cycles comes from the compounding multipliers, not
+   * from the template.
+   *
+   * The boss position (cyclePos === eliteRounds) never asks for a template: waves.js routes it to buildBossWave.
    */
   endlessEliteTemplate(r) {
     const list = this.endlessEliteTemplates();
+    if (!list.length) return null;
     const pos = this.endlessCyclePos(r);
-    const cycle = Math.floor((this.endlessStep(r) - 1) / (this.endlessCfg.eliteRounds + 1));
-    return list[(cycle * this.endlessCfg.eliteRounds + pos) % list.length];
+    return list[pos % list.length];
   }
 
   /**
