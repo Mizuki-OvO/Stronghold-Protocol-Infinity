@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>卫戍协议 · 本地数值修改器</title>
+<style>
+  :root {
+    --bg: #14161a; --panel: #1c1f26; --panel2: #22262f; --line: #2e3440;
+    --fg: #e6e9ef; --dim: #93a1b1; --acc: #59f4ca; --warn: #ffc600; --bad: #ff5454;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 13px/1.5 "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+  }
+  header {
+    position: sticky; top: 0; z-index: 5; background: #101216ee; backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--line); padding: 10px 16px; display: flex; align-items: center; gap: 16px;
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .5px; }
+  header .tag { font-size: 11px; color: var(--acc); border: 1px solid var(--acc); border-radius: 3px; padding: 1px 6px; }
+  header .status { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--dim); }
+  main { padding: 14px 16px 60px; max-width: 1500px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; margin-bottom: 14px; overflow: hidden; }
+  section > h2 {
+    margin: 0; padding: 9px 14px; font-size: 13px; font-weight: 600; background: var(--panel2);
+    border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px;
+  }
+  section > h2 small { font-weight: 400; color: var(--dim); font-size: 11px; }
+  .body { padding: 12px 14px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px 16px; }
+  .f { display: flex; flex-direction: column; gap: 3px; }
+  .f > label { font-size: 11px; color: var(--dim); }
+  .f > label b { color: var(--fg); font-weight: 600; }
+  input, select, button { font: inherit; }
+  input[type=text], input[type=number] {
+    background: #0f1116; color: var(--fg); border: 1px solid var(--line); border-radius: 5px;
+    padding: 5px 8px; font-family: var(--mono); font-size: 12px; width: 100%;
+  }
+  input:focus { outline: none; border-color: var(--acc); }
+  input.on { border-color: var(--warn); color: var(--warn); }
+  button {
+    background: #2b3140; color: var(--fg); border: 1px solid var(--line); border-radius: 5px;
+    padding: 5px 12px; cursor: pointer; white-space: nowrap;
+  }
+  button:hover { background: #353d4f; border-color: #4a5468; }
+  button.acc { background: #14453c; border-color: #1d6b5c; color: var(--acc); }
+  button.acc:hover { background: #1a5b4e; }
+  button.bad { background: #45201f; border-color: #6b2f2d; color: #ff9b9b; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+  .hint { color: var(--dim); font-size: 11px; margin: 6px 0 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--dim); font-weight: 500; font-size: 11px; }
+  td.mono, .mono { font-family: var(--mono); }
+  .pcard { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+  .pcard .phead { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .pcard .pname { font-weight: 600; }
+  .pcard .pid { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot.alive { background: var(--acc); } .dot.dead { background: var(--bad); }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .chip {
+    font-family: var(--mono); font-size: 11px; background: #0f1116; border: 1px solid var(--line);
+    border-radius: 3px; padding: 1px 6px; color: var(--dim);
+  }
+  .chip b { color: var(--warn); }
+  .ovitem { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-family: var(--mono); font-size: 12px; }
+  .ovitem .k { color: var(--acc); } .ovitem .v { color: var(--warn); }
+  .ovitem .b { color: var(--dim); text-decoration: line-through; }
+  .ovitem button { padding: 1px 8px; font-size: 11px; }
+  #log { font-family: var(--mono); font-size: 12px; color: var(--dim); max-height: 150px; overflow: auto; }
+  #log div { padding: 1px 0; }
+  #log .g { color: var(--acc); } #log .e { color: var(--bad); }
+  .warnbox { background: #3a2f10; border: 1px solid #6b5518; color: #ffe08a; padding: 8px 12px; border-radius: 6px; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>卫戍协议 · 本地数值修改器</h1>
+  <span class="tag">DEV ONLY</span>
+  <span class="status" id="status">加载中…</span>
+</header>
+
+<main>
+  <div class="warnbox" style="margin-bottom:14px">
+    这里改的是<b>运行中服务器进程</b>里的数值覆盖层，不会动任何 <code>data/*.json</code> 文件。
+    改动存在 <code>dev-overrides.json</code>，重开也还在；点「还原」即全部清除。
+  </div>
+
+  <section>
+    <h2>一键预设</h2>
+    <div class="body">
+      <div class="row">
+        <button class="acc" onclick="preset('无尽测试档')">无尽测试档（9999 血 / 9999 金币 / 全羁绊 999 / 商店上限 7 / 无限刷新）</button>
+        <button onclick="preset('还原')">还原全部</button>
+        <button onclick="api('apply')">立刻重新套用</button>
+        <button onclick="selfCheck()">自检：数值是否真的进了游戏</button>
+      </div>
+      <p class="hint">预设改的是「覆盖表」。已经开着的那一局会在<b>下一个回合开始</b>时套上（也可以手动点「立刻重新套用」）。</p>
+      <div id="selfcheck"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>回合控制 <small>跳到指定回合 / 跳过当前阶段</small></h2>
+    <div class="body">
+      <div class="row" style="align-items:center;margin-bottom:10px">
+        <span class="chip" style="font-size:14px">当前 <b id="rc-now">—</b></span>
+        <span class="chip" style="font-size:14px">下一回合 <b id="rc-next">—</b></span>
+        <span class="chip" id="rc-target-wrap" style="display:none;font-size:14px">已排队跳到 <b id="rc-target">—</b></span>
+      </div>
+      <div class="row">
+        <div class="f" style="flex:0 0 150px"><label>目标回合</label>
+          <input type="number" id="rc-round" min="1" max="999" placeholder="如 16" /></div>
+        <button class="acc" onclick="jumpRound(Number($('rc-round').value))">跳过去</button>
+        <button onclick="jumpRound(currentRound + 1)" title="快进一回合">+1 回合</button>
+        <button onclick="jumpRound(currentRound + 5)" title="快进五回合">+5 回合</button>
+        <button onclick="api('round', { clear: true })">取消排队</button>
+        <button class="acc" onclick="api('skip')">跳过当前阶段</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <span class="hint" style="margin:0">常用落点：</span>
+        <button onclick="jumpRound(14)">R14 最终攻势</button>
+        <button onclick="jumpRound(15)">R15 隐秘核心</button>
+        <button onclick="jumpRound(16)">R16 无尽第 1 波</button>
+        <button onclick="jumpRound(19)">R19 无尽·机变</button>
+        <button onclick="jumpRound(22)">R22 无尽·领袖</button>
+        <button onclick="jumpRound(25)">R25 无尽·下一循环机变</button>
+      </div>
+      <p class="hint">
+        跳回合是<b>在回合边界生效</b>的：点下去之后，<b>下一个回合</b>就变成你填的号。正在打的那一波不会被改动
+        （改了会让已生成的出怪和结算数据打架）。战斗中随时可以点，结算完自动跳过去。<br />
+        下一波的出怪、难度倍率、无尽模式步进、削层回血全部按新回合号重新计算；商店等级/金币/羁绊不受影响。
+        往回跳也可以（比如从无尽第 30 波跳回 R16），难度会跟着退回去。<br />
+        <b>跳过当前阶段</b>＝立刻触发这个阶段的倒计时到期（不是把时钟清零，所以不会留下半截状态）。
+        作战和领袖战由战斗模拟驱动，没有可跳过的倒计时——那两处点它是无效的，等打完即可。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>当前对局 <small id="matchinfo"></small></h2>
+    <div class="body" id="matchbox"></div>
+  </section>
+
+  <section>
+    <h2>全局 · 对局外（下一局生效）</h2>
+    <div class="body">
+      <div class="grid">
+        <div class="f"><label>起手生命值 <b>economy.startLp</b></label>
+          <input type="number" id="f-startLp" placeholder="留空 = 官方值" onchange="setLobby('economy.startLp', this.value)" /></div>
+        <div class="f"><label>起手金币（下一局）<b>economy.defaultStartFunds</b></label>
+          <input type="number" id="f-startFunds" placeholder="一般不需要，官方为 0" onchange="setLobby('economy.defaultStartFunds', this.value)" /></div>
+        <div class="f"><label>商店等级上限 <b>qa.shopLevelCap</b></label>
+          <input type="number" id="f-shopCap" placeholder="官方 6 / 无尽 7" onchange="setPatch('shopLevelCap', this.value)" /></div>
+        <div class="f"><label>刷新价格 <b>economy.refreshPrice</b></label>
+          <input type="number" id="f-refresh" onchange="setLobby('economy.refreshPrice', this.value)" /></div>
+        <div class="f"><label>每回合收入上限 <b>economy.incomeCap</b></label>
+          <input type="number" id="f-incomeCap" onchange="setLobby('economy.incomeCap', this.value)" /></div>
+        <div class="f"><label>备战席位数 <b>economy.benchSize</b></label>
+          <input type="number" id="f-bench" onchange="setLobby('economy.benchSize', this.value)" /></div>
+        <div class="f"><label>上场人数上限 <b>economy.deployCap</b></label>
+          <input type="number" id="f-deploy" onchange="setLobby('economy.deployCap', this.value)" /></div>
+        <div class="f"><label>每张卡装备数 <b>economy.equipPerChess</b></label>
+          <input type="number" id="f-equip" onchange="setLobby('economy.equipPerChess', this.value)" /></div>
+        <div class="f"><label>升级价目表 <b>mode.upgradePrices</b></label>
+          <input type="text" id="f-upg" placeholder="如 5,8,11,12,13" onchange="setLobby('mode.upgradePrices', this.value)" /></div>
+        <div class="f"><label>每回合收入表 <b>economy.income</b></label>
+          <input type="text" id="f-income" placeholder="如 0,4,5,6,7,8,9,10,11,12" onchange="setLobby('economy.income', this.value)" /></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div class="f" style="flex:0 0 240px"><label>羁绊层数上限 <b>patch.qa.layerCap</b>（默认 999，需改数据才能真生效）</label>
+          <input type="number" id="f-layerCap" onchange="setPatch('layerCap', this.value)" /></div>
+        <button onclick="setPatch('freeRefresh', true)">无限刷新：开</button>
+        <button class="bad" onclick="clearOv('patch')">无限刷新：关</button>
+      </div>
+      <p class="hint">羁绊层数上限是硬编码常量（shared/constants.js 的 BOND_LAYER_CAP = 999），面板改不动，这里只作展示。</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>敌人倍率 <small>config.modes[&lt;难度&gt;].enemyScale[&lt;回合&gt;] · 下一波生效</small></h2>
+    <div class="body">
+      <div class="row">
+        <div class="f" style="flex:0 0 240px"><label>难度</label>
+          <select id="es-mode" onchange="renderEs()"></select></div>
+        <div class="f" style="flex:0 0 140px"><label>起始回合</label>
+          <input type="number" id="es-from" value="1" min="1" max="30" onchange="renderEs()" /></div>
+        <div class="f" style="flex:0 0 140px"><label>结束回合</label>
+          <input type="number" id="es-to" value="16" min="1" max="30" onchange="renderEs()" /></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div class="f" style="flex:0 0 160px"><label>生命倍率 <b>hp</b></label><input type="number" step="0.05" id="es-hp" placeholder="不改" /></div>
+        <div class="f" style="flex:0 0 160px"><label>攻击倍率 <b>atk</b></label><input type="number" step="0.05" id="es-atk" placeholder="不改" /></div>
+        <div class="f" style="flex:0 0 160px"><label>移速倍率 <b>speed</b></label><input type="number" step="0.05" id="es-spd" placeholder="不改" /></div>
+        <button class="acc" onclick="applyEnemyScale()">应用到所选区间</button>
+        <button onclick="clearEnemyScale()">清除该难度全部覆盖</button>
+      </div>
+      <div style="margin-top:10px;overflow:auto"><table id="es-table"></table></div>
+      <p class="hint">倍率写在 <code>mode.enemyScale</code> 上，出怪时读取 → 对<b>下一波</b>生效。无尽模式第 16 波起是在第 14 波数值上按 growth 连乘，改第 14 波也会带动无尽。</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>无尽模式参数 <small>config.endless · 下一局生效</small></h2>
+    <div class="body">
+      <div class="grid">
+        <div class="f"><label>每循环精英波数 <b>endless.eliteRounds</b></label>
+          <input type="number" id="f-elite" onchange="setLobby('endless.eliteRounds', this.value)" /></div>
+        <div class="f"><label>血量成长 <b>endless.growth.hp</b></label>
+          <input type="number" step="0.01" id="f-ghp" onchange="setLobby('endless.growth.hp', this.value)" /></div>
+        <div class="f"><label>攻击成长 <b>endless.growth.atk</b></label>
+          <input type="number" step="0.01" id="f-gatk" onchange="setLobby('endless.growth.atk', this.value)" /></div>
+        <div class="f"><label>防御成长 <b>endless.growth.def</b></label>
+          <input type="number" step="0.01" id="f-gdef" onchange="setLobby('endless.growth.def', this.value)" /></div>
+        <div class="f"><label>削层起始无尽波 <b>balance.fromWave</b></label>
+          <input type="number" id="f-bfrom" onchange="setLobby('endless.balance.fromWave', this.value)" /></div>
+        <div class="f"><label>每波削层数 <b>balance.layerCut</b></label>
+          <input type="number" id="f-bcut" onchange="setLobby('endless.balance.layerCut', this.value)" /></div>
+        <div class="f"><label>每波回血 <b>balance.lpGain</b></label>
+          <input type="number" id="f-blp" onchange="setLobby('endless.balance.lpGain', this.value)" /></div>
+        <div class="f"><label>商店最高等级 <b>endless.shop.maxLevel</b></label>
+          <input type="number" id="f-emax" onchange="setLobby('endless.shop.maxLevel', this.value)" /></div>
+        <div class="f"><label>特殊道具栏位 <b>endless.shop.specialSlots</b></label>
+          <input type="number" id="f-eslots" onchange="setLobby('endless.shop.specialSlots', this.value)" /></div>
+        <div class="f"><label>机变阶段落点（循环内第几波之后）<b>endless.draft.afterWave</b></label>
+          <input type="number" id="f-dafter" onchange="setLobby('endless.draft.afterWave', this.value)" /></div>
+        <div class="f"><label>机变阶段卡片数 <b>endless.draft.cards</b></label>
+          <input type="number" id="f-dcards" placeholder="留空 = 单人3 / 多人6" onchange="setLobby('endless.draft.cards', this.value)" /></div>
+        <div class="f"><label>机变补给品阶 <b>endless.draft.supplyTiers</b></label>
+          <input type="text" id="f-dtiers" placeholder="如 4,6" onchange="setLobby('endless.draft.supplyTiers', this.value)" /></div>
+      </div>
+      <p class="hint">
+        机变阶段（官方的「选道具或敌人」环节，全套四种：<b>悬赏决策</b> 选敌人拿赏金 / <b>道具补给</b> 白嫖装备 /
+        <b>机密商店</b> 免费进货 / <b>战术决策</b> 增益与地形）在官方局里只出现在第 3、9、11 回合。
+        无尽模式<b>每个 7 波循环</b>（6 精英 + 1 领袖）沿用一次：<code>afterWave</code> 默认 3，
+        即循环内第 3 波结束时开 —— 循环1 是 R18 结束 → R19 开机变，循环2 是 R25 → R26，循环3 是 R32 → R33…
+        每个循环恰好一次，且永远不会撞上领袖波。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>全部覆盖项 <small>值 = 覆盖，灰删除线 = 官方值</small></h2>
+    <div class="body" id="ovlist"></div>
+  </section>
+
+  <section>
+    <h2>日志</h2>
+    <div class="body"><div id="log"></div></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let S = null;   // 最近一次 state
+
+function log(msg, cls = '') {
+  const d = document.createElement('div');
+  if (cls) d.className = cls;
+  d.textContent = `${new Date().toLocaleTimeString('zh-CN', { hour12: false })}  ${msg}`;
+  $('log').prepend(d);
+  while ($('log').children.length > 200) $('log').lastChild.remove();
+}
+
+async function api(path, body) {
+  try {
+    const r = await fetch('/dev/api/' + path, body
+      ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }
+      : undefined);
+    const j = await r.json();
+    if (!j.ok) { log('失败: ' + (j.error || r.status), 'e'); return null; }
+    if (j.message) log(j.message, 'g');
+    render(j);
+    return j;
+  } catch (e) { log('请求出错: ' + e.message, 'e'); return null; }
+}
+
+// ---- 写覆盖 -------------------------------------------------------------------------------------
+const setLobby = (path, value) => api('set', { scope: 'lobby', path, value });
+const setPatch = (path, value) => api('set', { scope: 'patch', path, value });
+const clearOv = (scope, path) => api('clear', { scope, path });
+const preset = (name) => api('preset', { name });
+
+// ---- 回合控制 -----------------------------------------------------------------------------------
+let currentRound = 0;
+
+function jumpRound(r) {
+  if (!Number.isInteger(r) || r < 1) { log('回合号要填正整数', 'e'); return; }
+  return api('round', { round: r });
+}
+
+function renderRound(m) {
+  if (!m) {
+    $('rc-now').textContent = '—';
+    $('rc-next').textContent = '—';
+    $('rc-target-wrap').style.display = 'none';
+    return;
+  }
+  currentRound = m.round;
+  const phase = m.phaseName || m.phase;
+  $('rc-now').textContent = `R${m.round} · ${phase}`;
+  $('rc-next').textContent = `R${m.nextRound}`;
+  const queued = Number.isInteger(m.targetRound);
+  $('rc-target-wrap').style.display = queued ? '' : 'none';
+  if (queued) $('rc-target').textContent = `R${m.targetRound}`;
+}
+
+/**
+ * 自检：让服务器用**游戏自己的 GameData** 解析一遍数值，证明覆盖真的进了游戏，
+ * 而不是只写进了面板自己的表。
+ */
+async function selfCheck() {
+  const box = $('selfcheck');
+  box.innerHTML = '<p class="hint">自检中…</p>';
+  const r = await api('probe', { modeId: 'mode_single_hard', round: 1 });
+  if (!r || !r.probe || !r.probe.ok) {
+    box.innerHTML = `<p class="hint" style="color:var(--bad)">自检失败：${esc((r && r.probe && r.probe.error) || '未知错误')}</p>`;
+    return;
+  }
+  const v = r.probe.resolved;
+  const row = (k, val) => `<tr><td>${k}</td><td class="mono" style="color:var(--warn)">${esc(typeof val === 'object' ? JSON.stringify(val) : String(val))}</td></tr>`;
+  box.innerHTML = `<div style="margin-top:10px;overflow:auto">
+    <p class="hint">下面是服务器拿 <b>游戏自己的 GameData</b> 解析出来的值（不是覆盖表）。凡是显示成黄色的，就是被面板改过的。</p>
+    <table>
+      <tr><th>项目</th><th>当前生效值</th></tr>
+      ${row('起手生命值 defaultStartLp', v.startLp)}
+      ${row('起手生命值 startLp(band)', v.startLpOfBand)}
+      ${row('商店等级上限 maxShopLevel', v.maxShopLevel)}
+      ${row('刷新价格 refreshPrice', v.refreshPrice)}
+      ${row('备战席位数 benchSize', v.benchSize)}
+      ${row('上场上限 deployCap', v.deployCap)}
+      ${row('每卡装备数 equipPerChess', v.equipPerChess)}
+      ${row('第1回合收入 income(1)', v.incomeAtRound)}
+      ${row('升级价目表 upgradePrices', v.upgradePrices)}
+      ${row('1级升2级价 upgradeBase(1)', v.upgradeBase1)}
+      ${row('最后一回合 lastRound', v.lastRound)}
+      ${row('隐秘核心回合 hiddenRound', v.hiddenRound)}
+      ${row('无尽·每循环精英波数', v.endlessEliteRounds)}
+      ${row('无尽·成长 hp/atk/def', v.endlessGrowth)}
+      ${row('无尽·平衡', v.endlessBalance)}
+      ${row('无尽·机变阶段设置', v.endlessDraft)}
+      ${row('无尽·会开机变的回合', v.endlessDraftRounds)}
+      ${row('第1回合敌倍率', v.enemyScale)}
+    </table></div>
+    <div style="margin-top:12px">
+      <p class="hint">无尽特殊道具（游戏内实际解析值；<b>客户端数据</b>=该道具是否已镜像进 data/items.json，
+        否则卡片只会显示 id、右键也打不开信息弹窗）：</p>
+      <table>
+        <tr><th>图标</th><th>名称</th><th>阶</th><th>售价</th><th>效果</th><th>条件</th><th>客户端数据</th></tr>
+        ${(v.endlessItems || []).map((it) => `<tr>
+          <td style="font-size:20px">${esc(it.icon || '')}</td>
+          <td class="mono" style="color:var(--warn)">${esc(it.name)}</td>
+          <td class="mono">${it.tier}</td>
+          <td class="mono">${it.price}</td>
+          <td>${esc(it.desc)}</td>
+          <td>${it.requiresDeployCap ? `可部署人数 ≥ ${it.requiresDeployCap}` : '—'}</td>
+          <td style="color:${it.inClientData ? 'var(--acc)' : 'var(--bad)'}">${it.inClientData ? '✓ 有' : '✗ 缺'}</td>
+        </tr>`).join('')}
+      </table>
+    </div>`;
+  log('自检完成：以上为游戏内实际解析值', 'g');
+}
+
+// ---- 渲染 ---------------------------------------------------------------------------------------
+function val(o, p) {
+  let cur = o;
+  for (const k of String(p).split('.')) { if (cur == null || typeof cur !== 'object') return undefined; cur = cur[k]; }
+  return cur;
+}
+
+function fill(id, v, isSet) {
+  const el = $(id);
+  if (!el) return;
+  if (document.activeElement === el) { el.classList.toggle('on', !!isSet); return; }
+  el.value = v === undefined || v === null ? '' : (typeof v === 'object' ? JSON.stringify(v) : v);
+  el.classList.toggle('on', !!isSet);
+}
+
+function render(j) {
+  S = j;
+  const ov = j.ov || {}, base = j.base || {};
+  const m = j.match;
+
+  $('status').textContent = m
+    ? `游戏已连接 · R${m.round} ${m.phaseName || m.phase}${m.endless ? ' · 无尽第' + m.endlessRound + '波' : ''} · 玩家 ${m.players.length}`
+    : '等待开局…（在游戏页面创建房间并开局后自动出现）';
+  $('matchinfo').textContent = m ? `回合 ${m.round} · 商店上限 ${m.maxShopLevel} · 敌倍率 hp×${(m.enemyScale && m.enemyScale.hpMul || 1).toFixed(2)} atk×${(m.enemyScale && m.enemyScale.atkMul || 1).toFixed(2)}` : '';
+  renderRound(m);
+
+  // 全局字段
+  const lob = ov.lobby || {}, qa = (ov.patch && ov.patch.qa) || {};
+  fill('f-startLp', lob['economy.defaultStartLp'], 'economy.defaultStartLp' in lob);
+  fill('f-startFunds', lob['economy.defaultStartFunds'], 'economy.defaultStartFunds' in lob);
+  fill('f-shopCap', qa.shopLevelCap, 'shopLevelCap' in qa);
+  fill('f-refresh', lob['economy.refreshPrice'], 'economy.refreshPrice' in lob);
+  fill('f-incomeCap', lob['economy.incomeCap'], 'economy.incomeCap' in lob);
+  fill('f-bench', lob['economy.benchSize'], 'economy.benchSize' in lob);
+  fill('f-deploy', lob['economy.deployCap'], 'economy.deployCap' in lob);
+  fill('f-equip', lob['economy.equipPerChess'], 'economy.equipPerChess' in lob);
+  fill('f-upg', lob['mode.upgradePrices'], 'mode.upgradePrices' in lob);
+  fill('f-income', lob['economy.income'], 'economy.income' in lob);
+  fill('f-layerCap', qa.layerCap, 'layerCap' in qa);
+  fill('f-elite', lob['endless.eliteRounds'], 'endless.eliteRounds' in lob);
+  fill('f-ghp', lob['endless.growth.hp'], 'endless.growth.hp' in lob);
+  fill('f-gatk', lob['endless.growth.atk'], 'endless.growth.atk' in lob);
+  fill('f-gdef', lob['endless.growth.def'], 'endless.growth.def' in lob);
+  fill('f-bfrom', lob['endless.balance.fromWave'], 'endless.balance.fromWave' in lob);
+  fill('f-bcut', lob['endless.balance.layerCut'], 'endless.balance.layerCut' in lob);
+  fill('f-blp', lob['endless.balance.lpGain'], 'endless.balance.lpGain' in lob);
+  fill('f-emax', lob['endless.shop.maxLevel'], 'endless.shop.maxLevel' in lob);
+  fill('f-eslots', lob['endless.shop.specialSlots'], 'endless.shop.specialSlots' in lob);
+  fill('f-dafter', lob['endless.draft.afterWave'], 'endless.draft.afterWave' in lob);
+  fill('f-dcards', lob['endless.draft.cards'], 'endless.draft.cards' in lob);
+  fill('f-dtiers', lob['endless.draft.supplyTiers'], 'endless.draft.supplyTiers' in lob);
+
+  renderPlayers(m);
+  renderEs();
+  renderOv(ov, base);
+}
+
+function renderPlayers(m) {
+  const box = $('matchbox');
+  if (!m) { box.innerHTML = '<p class="hint">还没有对局。打开游戏 → 选难度 → 创建房间 → 开局，面板会自动接上。</p>'; return; }
+  const ov = (S.ov.me || {}), mo = S.ov.match || {};
+  box.innerHTML = m.players.map((p) => {
+    const o = ov[p.playerId] || {};
+    const cur = (k) => (o[k] !== undefined ? o[k] : (mo[k] !== undefined ? mo[k] : ''));
+    const flag = (k) => (o[k] !== undefined ? ' (个人)' : (mo[k] !== undefined ? ' (全体)' : ''));
+    const chips = Object.entries(p.layers).map(([k, v]) => `<span class="chip">${k} <b>${v}</b></span>`).join('') || '<span class="chip">无羁绊层数</span>';
+    return `<div class="pcard">
+      <div class="phead">
+        <span class="dot ${p.alive ? 'alive' : 'dead'}"></span>
+        <span class="pname">${esc(p.name)}</span>
+        <span class="pid">${esc(p.playerId)}${p.isBot ? ' · BOT' : ''}</span>
+        <span class="chip">生命 <b>${p.lp}</b></span>
+        <span class="chip">金币 <b>${p.funds}</b></span>
+        <span class="chip">商店 <b>${p.shopLevel}</b></span>
+        <span class="chip">上场 <b>${p.board}</b></span>
+      </div>
+      <div class="row">
+        <div class="f" style="flex:0 0 130px"><label>生命值${flag('lp')}</label>
+          <input type="number" id="p-${p.playerId}-lp" value="${cur('lp')}" placeholder="${p.lp}" /></div>
+        <div class="f" style="flex:0 0 130px"><label>金币${flag('funds')}</label>
+          <input type="number" id="p-${p.playerId}-funds" value="${cur('funds')}" placeholder="${p.funds}" /></div>
+        <div class="f" style="flex:0 0 130px"><label>商店等级${flag('shopLevel')}</label>
+          <input type="number" id="p-${p.playerId}-shopLevel" value="${cur('shopLevel')}" placeholder="${p.shopLevel}" /></div>
+        <button class="acc" onclick="savePlayer('${p.playerId}')">仅此人</button>
+        <button onclick="savePlayerAll('${p.playerId}')">所有人</button>
+        <button onclick="clearOv('me', '', '${p.playerId}')">清掉此人覆盖</button>
+      </div>
+      <div class="chips">${chips}</div>
+    </div>`;
+  }).join('') + `
+    <div class="row" style="margin-top:6px">
+      <div class="f" style="flex:0 0 130px"><label>羁绊层数</label><input type="number" id="bonds-layer" value="999" /></div>
+      <button class="acc" onclick="bondsAll(Number($('bonds-layer').value))">全员羁绊设为该层数</button>
+      <button onclick="bondsAll(0)">全员羁绊清 0</button>
+      <label class="hint" style="display:flex;align-items:center;gap:6px">
+        <input type="checkbox" id="bonds-atleast" /> 只加不减（保底模式）
+      </label>
+    </div>`;
+}
+
+async function savePlayer(pid) {
+  const v = (k) => { const el = $(`p-${pid}-${k}`); return el ? el.value : ''; };
+  const values = {};
+  for (const k of ['lp', 'funds', 'shopLevel']) { const s = v(k); if (s !== '') values[k] = Number(s); }
+  const j = await api('set', { scope: 'me', playerId: pid, values });
+  if (j) log(`已设 ${pid}: ${JSON.stringify(values)} → 立刻生效`, 'g');
+}
+
+async function savePlayerAll(pid) {
+  const v = (k) => { const el = $(`p-${pid}-${k}`); return el ? el.value : ''; };
+  const values = {};
+  for (const k of ['lp', 'funds', 'shopLevel']) { const s = v(k); if (s !== '') values[k] = Number(s); }
+  const j = await api('set', { scope: 'match', values });
+  if (j) log(`已设全体玩家: ${JSON.stringify(values)} → 立刻生效`, 'g');
+}
+
+async function bondsAll(layer) {
+  const j = await api('bonds', { layer });
+  if (j) log(`羁绊层数 → ${layer}（涉及 ${j.bondsSet} 个羁绊）`, 'g');
+}
+
+function renderOv(ov, base) {
+  const rows = [];
+  const push = (scope, path, value, baseVal, playerId) => {
+    const b = baseVal === undefined ? '' : ` <span class="b">官方 ${typeof baseVal === 'object' ? JSON.stringify(baseVal) : baseVal}</span>`;
+    rows.push(`<div class="ovitem"><span class="k">[${scope}${playerId ? ':' + esc(playerId) : ''}] ${esc(path)}</span>
+      <span class="v">= ${esc(typeof value === 'object' ? JSON.stringify(value) : String(value))}</span>${b}
+      <button onclick="clearOne('${scope}','${esc(path)}','${esc(playerId || '')}')">删</button></div>`);
+  };
+  const econ = base.economy || {}, qa = (ov.patch && ov.patch.qa) || {};
+  for (const [p, v] of Object.entries(ov.lobby || {})) {
+    const bp = p.startsWith('mode.') ? undefined : p;
+    push('全局', p, v, bp ? val(econ, bp.replace(/^economy\./, '')) || val(base.modes, bp.replace(/^mode\./, '')) : undefined);
+  }
+  for (const [k, v] of Object.entries(qa)) push('开关', k, v);
+  for (const [k, v] of Object.entries(ov.match || {})) {
+    push('全体', k, v);
+  }
+  for (const [pid, o] of Object.entries(ov.me || {})) for (const [k, v] of Object.entries(o)) push('个人', k, v, undefined, pid);
+  $('ovlist').innerHTML = rows.length ? rows.join('') : '<p class="hint">空 —— 全部走官方数值。</p>';
+}
+
+function clearOne(scope, path, playerId) {
+  const s = scope === '全局' ? 'lobby' : scope === '开关' ? 'patch' : scope === '全体' ? 'match' : 'me';
+  return api('clear', { scope: s, path, playerId });
+}
+
+// ---- 敌人倍率 -----------------------------------------------------------------------------------
+function esModes() { return Object.keys((S && S.base && S.base.modeEnemyScale) || {}); }
+
+function renderEs() {
+  const sel = $('es-mode');
+  const modes = esModes();
+  if (sel.options.length !== modes.length) {
+    const keep = sel.value;
+    sel.innerHTML = modes.map((m) => `<option value="${m}">${m}</option>`).join('');
+    sel.value = modes.includes(keep) ? keep : (modes.find((m) => m.includes('abyss')) || modes[0]);
+  }
+  const mid = sel.value;
+  const tbl = (S.base.modeEnemyScale || {})[mid] || {};
+  const from = Number($('es-from').value) || 1, to = Number($('es-to').value) || 16;
+  const rows = ['<tr><th>回合</th><th>hp</th><th>atk</th><th>speed</th></tr>'];
+  for (let r = Math.max(1, from); r <= Math.min(30, to); r++) {
+    const o = tbl[String(r)] || {};
+    const cell = (k, baseV) => {
+      const p = `mode.enemyScale.${r}.${k}`;
+      const set = (S.ov.lobby || {})[p] !== undefined;
+      const v = set ? S.ov.lobby[p] : baseV;
+      return `<td><input type="number" step="0.05" style="width:92px" class="${set ? 'on' : ''}" value="${v === undefined ? '' : v}"
+        onchange="setLobby('${p}', this.value)" onfocus="this.select()" /></td>`;
+    };
+    rows.push(`<tr><td class="mono">${r}</td>${cell('hp', o.hp)}${cell('atk', o.atk)}${cell('speed', o.speed)}</tr>`);
+  }
+  $('es-table').innerHTML = rows.join('');
+}
+
+async function applyEnemyScale() {
+  const mid = $('es-mode').value, from = Number($('es-from').value) || 1, to = Number($('es-to').value) || 16;
+  const hp = $('es-hp').value, atk = $('es-atk').value, spd = $('es-spd').value;
+  const values = {};
+  for (let r = from; r <= to; r++) {
+    if (hp !== '') values[`mode.enemyScale.${r}.hp`] = Number(hp);
+    if (atk !== '') values[`mode.enemyScale.${r}.atk`] = Number(atk);
+    if (spd !== '') values[`mode.enemyScale.${r}.speed`] = Number(spd);
+  }
+  if (!Object.keys(values).length) { log('三个倍率至少填一个', 'e'); return; }
+  const j = await api('set', { scope: 'lobby', values });
+  if (j) log(`${mid} 第 ${from}–${to} 回合倍率已改（${Object.keys(values).length} 项），下一波生效`, 'g');
+}
+
+async function clearEnemyScale() {
+  const keys = Object.keys((S.ov && S.ov.lobby) || {}).filter((k) => k.startsWith('mode.enemyScale.'));
+  for (const k of keys) await api('clear', { scope: 'lobby', path: k });
+  log(`已清除 ${keys.length} 项敌人倍率覆盖`, 'g');
+}
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+/** 输入框正在被编辑时不要重绘，免得每 3 秒把光标顶掉。 */
+function busy() {
+  const a = document.activeElement;
+  return !!a && (a.tagName === 'INPUT' || a.tagName === 'SELECT') && a.type !== 'checkbox';
+}
+
+// ---- 启动：轮询对局 ------------------------------------------------------------------------------
+api('state');
+setInterval(async () => {
+  // 输入框正在编辑时不重绘整体（免得顶掉光标），但「当前对局 / 回合控制」那几块必须照样刷新 ——
+  // 否则你在填某个数值时，回合写完了面板还停在旧的回合上。
+  if (busy()) {
+    const j = await fetch('/dev/api/state').then((r) => r.json()).catch(() => null);
+    if (j && j.ok) {
+      S = j;
+      const m = j.match;
+      $('status').textContent = m
+        ? `游戏已连接 · R${m.round} ${m.phaseName || m.phase}${m.endless ? ' · 无尽第' + m.endlessRound + '波' : ''} · 玩家 ${m.players.length}`
+        : '等待开局…（在游戏页面创建房间并开局后自动出现）';
+      renderRound(m);
+    }
+    return;
+  }
+  api('state');
+}, 3000);
+</script>
+</body>
+</html>

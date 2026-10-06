@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>资源预加载 · 卫戍协议：盟约</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: #0c0f0e; color: #c3cbc7;
+    font: 15px/1.6 "Noto Sans SC", system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: grid; place-items: center; padding: 24px;
+  }
+  main { width: 100%; max-width: 640px; }
+  h1 { margin: 0 0 4px; font-size: 22px; color: #4ed8af; letter-spacing: 1px; }
+  .sub { margin: 0 0 24px; font-size: 13px; opacity: .7; }
+  .card { border: 1px solid #23302b; background: #111614; border-radius: 10px; padding: 20px 22px; }
+  .bar { height: 14px; background: #1b2421; border-radius: 7px; overflow: hidden; margin: 14px 0 10px; }
+  .fill { height: 100%; width: 0%; background: linear-gradient(90deg, #2f9d7c, #4ed8af); transition: width .2s ease; }
+  .row { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; font-size: 13px; }
+  .big { font-size: 30px; font-weight: 700; color: #4ed8af; font-variant-numeric: tabular-nums; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px; margin-top: 16px; font-size: 13px; }
+  .grid span { opacity: .65; }
+  .grid b { font-weight: 600; color: #d8e3de; font-variant-numeric: tabular-nums; }
+  .msg { margin-top: 16px; font-size: 13px; min-height: 20px; }
+  .ok { color: #4ed8af; }
+  .warn { color: #e8c46a; }
+  .err { color: #e8776a; }
+  details { margin-top: 18px; font-size: 12px; opacity: .75; }
+  summary { cursor: pointer; }
+  ol { padding-left: 20px; margin: 8px 0 0; }
+  li { margin: 3px 0; }
+  code { background: #1b2421; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  button {
+    margin-top: 16px; width: 100%; padding: 11px; border-radius: 8px; cursor: pointer;
+    border: 1px solid #2f9d7c; background: #17322a; color: #4ed8af; font: 600 15px inherit;
+  }
+  button:hover { background: #1d4235; }
+  button:disabled { opacity: .45; cursor: default; }
+</style>
+</head>
+<body>
+<main>
+  <h1>资源预加载</h1>
+  <p class="sub">先把美术 / 音频资源下载进浏览器缓存，之后进游戏就能秒开。</p>
+
+  <div class="card">
+    <div class="big" id="pct">0%</div>
+    <div class="bar"><div class="fill" id="fill"></div></div>
+    <div class="row">
+      <span id="files">0 / 0 个文件</span>
+      <span id="bytes">0 MB / 0 MB</span>
+    </div>
+
+    <div class="grid">
+      <div><span>速度</span> <b id="speed">—</b></div>
+      <div><span>剩余时间</span> <b id="eta">—</b></div>
+      <div><span>已缓存</span> <b id="done">0 MB</b></div>
+      <div><span>失败</span> <b id="failed">0</b></div>
+    </div>
+
+    <div class="msg" id="msg">正在读取素材清单…</div>
+
+    <button id="btn" disabled>开始下载</button>
+
+    <details>
+      <summary>说明与常见问题</summary>
+      <ol>
+        <li>下载完只需做一次。之后只要不清浏览器缓存，进游戏就是秒开。</li>
+        <li>中途关掉页面也可以，重新打开会继续（已缓存的部分不会重复下载）。</li>
+        <li>下载期间可以正常用电脑，后台跑着就行。</li>
+        <li>如果速度很慢，多半是服主的上行带宽被占满了，等他那边空一点再试。</li>
+        <li>清过浏览器缓存、或换了浏览器 / 设备，就需要重新跑一次。</li>
+        <li>建议用 Chrome / Edge。</li>
+      </ol>
+    </details>
+  </div>
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  var el = function (id) { return document.getElementById(id); };
+  var MB = 1048576;
+  // Each request costs a round trip through the tunnel, so concurrency is the single biggest lever:
+  // ~1600 files at 6-way concurrency is mostly spent waiting, not transferring.
+  var CONCURRENCY = 24;
+  var RETRIES = 2;
+
+  var state = {
+    urls: [], total: 0, done: 0, failed: 0,
+    bytes: 0, started: 0, running: false,
+    core: [], skipped: 0,
+  };
+
+  function human(n) {
+    if (n < 1024) return n + ' B';
+    if (n < MB) return (n / 1024).toFixed(0) + ' KB';
+    if (n < 1024 * MB) return (n / MB).toFixed(1) + ' MB';
+    return (n / 1024 / MB).toFixed(2) + ' GB';
+  }
+  function secs(s) {
+    if (!isFinite(s) || s <= 0) return '—';
+    if (s < 60) return Math.ceil(s) + ' 秒';
+    var m = Math.floor(s / 60), r = Math.ceil(s % 60);
+    return m + ' 分 ' + r + ' 秒';
+  }
+
+  /** Walk every string in the manifest that looks like a same-origin asset path. */
+  function collect(node, out) {
+    if (typeof node === 'string') {
+      if (node.charAt(0) === '/') out.push(node);
+      return;
+    }
+    if (Array.isArray(node)) { for (var i = 0; i < node.length; i++) collect(node[i], out); return; }
+    if (node && typeof node === 'object') {
+      for (var k in node) if (Object.prototype.hasOwnProperty.call(node, k)) collect(node[k], out);
+    }
+  }
+
+  /**
+   * The client rewrites audio to its extension-less /media/… form (public/js/media.js) to stop download
+   * managers popping up. Both URLs address the same file, and the browser caches them separately, so warm
+   * both — otherwise the game's own request for /media/… would still go to the network.
+   */
+  var AUDIO_EXT = ['.mp3', '.ogg', '.oga', '.opus', '.wav', '.m4a', '.aac'];
+  function mediaVariants(url) {
+    var m = /^\/assets\/audio\/(.+)$/i.exec(url);
+    if (!m) return null;
+    var rest = m[1];
+    for (var i = 0; i < AUDIO_EXT.length; i++) {
+      var e = AUDIO_EXT[i];
+      if (rest.toLowerCase().slice(-e.length) === e) return '/media/' + rest.slice(0, -e.length);
+    }
+    return null;
+  }
+
+  /**
+   * Is this asset worth preloading, or should the game fetch it on demand?
+   *
+   * Measured on this build: booting to the title screen pulls only ~1.3 MB, because the client already
+   * loads everything else lazily. Preloading all 269 MB therefore costs a 1 Mbps friend ~37 minutes for
+   * assets they may never see — while the game would have fetched the handful it needs in seconds.
+   *
+   * So the preload here is limited to art that is on screen the moment you are in the lobby / room /
+   * match (operator avatars, icons, small UI art). Everything heavy — spine models, full-body portraits,
+   * battle music — is left to the client's own on-demand loading.
+   */
+  function isCritical(url) {
+    // heavy full-screen art: settle/result panels, loading screens, entry backdrops
+    if (/^\/assets\/ui\/(settle|loading|entry)\//.test(url)) return false;
+    // spine skeletons/atlases/textures: pulled when a unit actually enters the field
+    if (/\/spine\//.test(url)) return false;
+    // operator full-body portraits (detail panel only)
+    if (/^\/assets\/char\/portrait\//.test(url)) return false;
+    // audio: only the lobby/title track; battle BGM arrives with the match
+    if (/^\/assets\/audio\//.test(url)) return /autochess|sy[s]?_act1|lobby/i.test(url);
+    return true;
+  }
+
+  function render() {
+    // The file count is the honest progress measure: sizes are not known until each response arrives.
+    var pct = state.total > 0 ? (state.done / state.total) * 100 : 0;
+    el('fill').style.width = pct.toFixed(1) + '%';
+    el('pct').textContent = pct.toFixed(1) + '%';
+    el('files').textContent = state.done + ' / ' + state.total + ' 个文件';
+    el('bytes').textContent = human(state.bytes) + ' 已下载';
+    el('done').textContent = human(state.bytes);
+    el('failed').textContent = String(state.failed);
+
+    var elapsed = (Date.now() - state.started) / 1000;
+    if (state.running && elapsed > 1 && state.bytes > 0 && state.done > 0) {
+      var bps = state.bytes / elapsed;
+      var perFile = elapsed / state.done;
+      el('speed').textContent = (bps * 8 / 1e6).toFixed(1) + ' Mbps';
+      el('eta').textContent = secs(perFile * (state.total - state.done));
+    }
+  }
+
+  function setMsg(text, cls) {
+    el('msg').textContent = text;
+    el('msg').className = 'msg' + (cls ? ' ' + cls : '');
+  }
+
+  async function fetchOne(url) {
+    for (var attempt = 0; attempt <= RETRIES; attempt++) {
+      try {
+        var res = await fetch(url, { cache: 'force-cache' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        // Read the body so the response is fully stored (and so we can count real bytes).
+        var buf = await res.arrayBuffer();
+        return buf.byteLength;
+      } catch (e) {
+        if (attempt === RETRIES) return -1;
+        await new Promise(function (r) { setTimeout(r, 400 * (attempt + 1)); });
+      }
+    }
+    return -1;
+  }
+
+  /** Download a list with the shared progress counters. @returns {{ok:number, failed:number}} */
+  async function downloadAll(list, concurrency) {
+    var index = 0;
+    var localFailed = 0;
+    async function worker() {
+      while (index < list.length) {
+        var url = list[index++];
+        var size = await fetchOne(url);
+        if (size < 0) { state.failed++; localFailed++; } else { state.bytes += size; }
+        state.done++;
+        render();
+      }
+    }
+    var workers = [];
+    for (var i = 0; i < concurrency; i++) workers.push(worker());
+    await Promise.all(workers);
+    return { failed: localFailed };
+  }
+
+  async function run() {
+    if (state.running) return;
+    state.running = true;
+    state.started = Date.now();
+    el('btn').disabled = true;
+    setMsg('正在下载关键资源（' + state.core.length + ' 个文件）… 下载期间请保持本页开启。');
+
+    await downloadAll(state.core, CONCURRENCY);
+    render();
+    state.running = false;
+
+    if (state.failed > 0) {
+      setMsg('⚠️ 有 ' + state.failed + ' 个文件下载失败。再点一次按钮可以补下缺失的部分。', 'warn');
+      el('btn').disabled = false;
+      el('btn').textContent = '重新检查（补下缺失的）';
+      return;
+    }
+
+    // Deliberately NOT prefetching anything else: the client loads the rest on demand as it needs it
+    // (spine models when a unit enters the field, portraits in the detail panel, battle BGM at match
+    // start). Pulling those up front would only make the wait longer for no benefit.
+    setMsg('✅ 关键资源已完成：' + state.core.length + ' 个文件 / ' + human(state.bytes)
+         + '。其余资源由游戏在需要时自己加载。', 'ok');
+    await redirectToGame();
+  }
+
+  /** Leave the preload page for the game. Nothing is left to download here, so a plain navigate is fine. */
+  function openGame() {
+    location.href = '/';
+  }
+
+  /**
+   * The core tier is cached, so the game opens quickly now. Verify the entry module is actually
+   * reachable first (a friend who broke off mid-way would otherwise land on a half-loaded screen),
+   * then count down and open it.
+   */
+  async function redirectToGame() {
+    var btn = el('btn');
+    btn.disabled = true;
+    btn.textContent = '正在进入游戏…';
+    setMsg('正在确认游戏可以打开…');
+
+    var reachable = false;
+    try {
+      // Read the entry module: it is the one thing the page cannot start without.
+      var res = await fetch('/js/main.js', { cache: 'force-cache', signal: AbortSignal.timeout(8000) });
+      reachable = res.ok;
+    } catch (e) {
+      reachable = false;
+    }
+
+    if (!reachable) {
+      setMsg('⚠️ 核心资源已缓存，但游戏入口暂时打不开（服务器可能断开了）。请稍后刷新本页重试。', 'warn');
+      btn.disabled = false;
+      btn.textContent = '进入游戏';
+      btn.onclick = openGame;
+      return;
+    }
+
+    var left = 5;
+    var tick = function () {
+      setMsg('✅ 关键资源已就绪，' + left + ' 秒后自动进入游戏…（其余资源游戏会自己按需加载）', 'ok');
+      btn.textContent = '立即进入游戏 (' + left + ')';
+      if (left <= 0) { openGame(); return; }
+      left--;
+      setTimeout(tick, 1000);
+    };
+    btn.disabled = false;
+    btn.onclick = openGame;
+    tick();
+  }
+
+  async function boot() {
+    try {
+      var res = await fetch('/data/assets.json', { cache: 'no-cache' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      var manifest = await res.json();
+
+      var raw = [];
+      collect(manifest, raw);
+      var seen = Object.create(null);
+      var core = [];
+      var skipped = 0;
+      for (var i = 0; i < raw.length; i++) {
+        var u = raw[i];
+        if (seen[u]) continue;
+        seen[u] = 1;
+        if (!isCritical(u)) { skipped++; continue; }
+        core.push(u);
+        var alt = mediaVariants(u);
+        if (alt && !seen[alt]) { seen[alt] = 1; core.push(alt); }
+      }
+
+      state.core = core;
+      state.urls = core;
+      state.total = core.length;
+      state.skipped = skipped;
+
+      setMsg('准备就绪：需要下载 ' + core.length + ' 个关键文件（干员头像 / 图标 / 大厅界面图）。'
+           + '其余 ' + skipped + ' 个较重的资源（骨骼模型、立绘、战斗音乐）由游戏在需要时自己加载，不用现在下。');
+      el('btn').disabled = false;
+      el('btn').textContent = '开始下载';
+      render();
+    } catch (e) {
+      setMsg('读取素材清单失败：' + (e && e.message ? e.message : e) +
+             ' — 请确认服务器在运行，然后刷新本页。', 'err');
+    }
+  }
+
+  el('btn').addEventListener('click', run);
+
+  // Let the user start with the space bar too.
+  document.addEventListener('keydown', function (e) {
+    if (e.code === 'Space' && !el('btn').disabled) { e.preventDefault(); run(); }
+  });
+
+  boot();
+})();
+</script>
+</body>
+</html>

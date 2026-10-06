@@ -1,0 +1,53 @@
+{
+  "name": "stronghold-protocol-infinity",
+  "version": "0.2.0-infinity.1",
+  "private": true,
+  "description": "明日方舟「卫戍协议：盟约」非官方同人联机网页复刻 · Infinity 改版（无尽模式 + 本地数值修改器；上游 sganggs/Stronghold-Protocol）",
+  "license": "GPL-3.0-or-later",
+  "homepage": "https://github.com/Mizuki-OvO/Stronghold-Protocol-Infinity#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Mizuki-OvO/Stronghold-Protocol-Infinity.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Mizuki-OvO/Stronghold-Protocol-Infinity/issues"
+  },
+  "keywords": [
+    "arknights",
+    "auto-chess",
+    "tower-defense",
+    "co-op",
+    "browser-game",
+    "fan-game",
+    "endless-mode"
+  ],
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test",
+    "vendor": "node tools/vendor.mjs",
+    "build-data": "node tools/build-data.mjs && node tools/sync-endless-items.mjs",
+    "sync-endless-items": "node tools/sync-endless-items.mjs",
+    "assets": "node tools/vendor.mjs && node tools/fetch-assets.mjs",
+    "postinstall": "node tools/vendor.mjs",
+    "setup": "node tools/setup.mjs",
+    "doctor": "node tools/doctor.mjs",
+    "launch": "node scripts/launch.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "htm": "^3.1.1",
+    "pixi-spine": "^4.0.6",
+    "pixi.js": "^7.4.2",
+    "preact": "^10.29.8",
+    "three": "^0.186.1",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.12.0"
+  }
+}

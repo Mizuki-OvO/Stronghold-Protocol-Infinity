@@ -1,0 +1,173 @@
+/* 无尽模式 (endless mode, docs/ENDLESS.md) — the ENDLESS_PROMPT ballot (public/js/ui/endlessOverlay.js).
+   Loaded alongside the other screen styles; the modal chrome itself comes from components.css (.modal / .modal__box). */
+
+.endless {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.endless__lead {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-md);
+}
+
+.endless__lead b {
+  color: var(--amber);
+}
+
+.endless__facts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-md);
+}
+
+.endless__facts li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.endless__k {
+  flex: 0 0 44px;
+  color: var(--text-lo);
+  font-size: 12px;
+  letter-spacing: .06em;
+}
+
+.endless__facts b {
+  color: var(--text-hi);
+  font-weight: 600;
+}
+
+/* ---- live tally ------------------------------------------------------------------------------- */
+
+.endless__tally {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-1);
+}
+
+.endless__bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+
+.endless__bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--amber), var(--gold));
+  transition: width .25s ease;
+}
+
+.endless__counts {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.endless__counts .is-yes { color: var(--mint-400); }
+.endless__counts .is-no { color: var(--red-premium); }
+.endless__counts .is-wait { color: var(--text-lo); }
+.endless__counts > :last-child { margin-left: auto; }
+
+.endless__votes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12.5px;
+}
+
+.endless__vote {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 7px;
+  border-radius: 4px;
+  border-left: 2px solid var(--line-2);
+  background: var(--bg-2);
+  color: var(--text-md);
+}
+
+.endless__vote.is-yes { border-left-color: var(--mint-500); }
+.endless__vote.is-no { border-left-color: var(--red); }
+.endless__vote.is-wait { border-left-color: var(--line-3); opacity: .75; }
+.endless__vote.is-you { background: var(--bg-3); color: var(--text-hi); }
+
+.endless__vote-state {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-lo);
+}
+
+.endless__vote.is-yes .endless__vote-state { color: var(--mint-400); }
+.endless__vote.is-no .endless__vote-state { color: var(--red-premium); }
+
+/* the ballot is not dismissible: an unanswered vote times out on the server */
+.endless-modal .modal__box {
+  border-color: var(--amber-a20);
+}
+
+/* ---- endless special items in the shop (public/js/ui/shopBar.js) -------------------------------- */
+
+/* the special items' icon is an emoji, drawn as text (no manifest art exists for them) */
+.scard__emoji {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 46px;
+  line-height: 1;
+  /* the game's own emoji font stack; the OS fallback renders the platform emoji */
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .55));
+}
+
+/* ---- in-match roundbox (public/js/ui/hud.js) -------------------------------------------------- */
+
+.roundbox--endless .roundbox__num {
+  color: var(--amber);
+}
+
+.roundbox__cycle {
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--text-lo);
+}
+
+/* ---- result screen (public/js/screens/result.js) ---------------------------------------------- */
+
+.result__endless {
+  margin-top: 6px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.result__endless .result__rnum {
+  color: var(--amber);
+}
+
+@media (max-width: 560px) {
+  .endless__k { flex-basis: 36px; }
+  .endless__counts { gap: 8px; font-size: 11.5px; }
+}

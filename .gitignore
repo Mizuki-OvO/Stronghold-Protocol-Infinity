@@ -1,0 +1,59 @@
+# --- dependencies & generated client libs -------------------------------------------------------
+node_modules/
+# copied from node_modules by tools/vendor.mjs (postinstall); never commit third-party builds
+public/vendor/
+
+# --- game assets: (c) Hypergryph / Yostar, fetched or extracted locally, NEVER committed ----------
+# tools/fetch-assets.mjs → public/assets/** (~270 MB) and public/fonts/** (+ fonts.css)
+public/assets/
+public/fonts/
+# tools/local-extract/extract.py → public/assets/local/** and this per-machine manifest
+# (optional: the client and the tests work without it; docs/DEPLOY.md §6 lists what falls back)
+data/local-assets.json
+# download caches, upstream tables, ledgers, reports, setup state
+.cache/
+
+# --- Python (optional local-client extraction) ----------------------------------------------------
+.venv*/
+venv/
+__pycache__/
+*.py[cod]
+
+# --- tests & logs ----------------------------------------------------------------------------------
+test/e2e/out/
+logs/
+*.log
+
+# --- per-machine config (scripts/install-service-windows.ps1) ------------------------------------
+scripts/service.env.cmd
+.env
+.env.*
+
+# --- OS / editor clutter ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+.idea/
+.vscode/
+.claude/
+
+# --- local Infinity tooling: bundled runtimes & binaries (too big, and per-machine) ---------------
+# a portable Node runtime dropped next to the project by the one-click launchers
+node22/
+# the cloudflared / frpc binaries the tunnel launchers download
+cloudflared/
+frpc*.exe
+
+# --- local Infinity tooling: personal runtime state, never part of the source ---------------------
+# 数值修改器's saved overrides (written while you play, contains your own test values)
+dev-overrides.json
+# the public URL the tunnel launcher prints for you (changes every run)
+联机地址.txt
+
+# --- 本地工作区分析产物（从 data/*.json 导出的表格，供离线查阅，不是游戏的一部分）----------------
+敌人数据.csv
+敌人总表.md
+波次组合表.csv
+难度倍率表.csv
+
