@@ -238,3 +238,13 @@ export const emoteArtGroup = (id) => { const e = emoteInfo(id); return e ? `emot
 export const emoteArtPath = (id) => { const e = emoteInfo(id); return e ? `/assets/local/emoticon/${e.dir}/${e.picId}.png` : null; };
 export const EMOTE_COOLDOWN_MS = 1000; // activity_table autoChessData.constData.chatCD (s)
 export const EMOTE_BUBBLE_MS = 3000;   // constData.chatTime (s): how long a bubble stays up
+
+// ---- typed chat (打字聊天, Infinity fork) ---------------------------------------------------------
+// The official mode ships only the 36 canned emotes; this is a remake feature for the co-op modes, where a team wants
+// to actually talk. `g.chat { text }` / `m.chat { playerId, name, text, at }` is room-scoped: everyone in the match
+// sees it, spectators included. Solo matches refuse it (the sender is alone — the client hides the box).
+export const CHAT_MAX_LEN = 120;        // characters after trimming (the input also caps at this)
+export const CHAT_COOLDOWN_MS = 700;    // per-sender gap, a little tighter than the emote one
+export const CHAT_BURST = 5;            // messages allowed back-to-back before the cooldown starts biting
+export const CHAT_LOG_MAX = 60;         // the client keeps this many lines in memory
+export const CHAT_TTL_MS = 8000;        // how long a line stays visible over the board (the log keeps it)

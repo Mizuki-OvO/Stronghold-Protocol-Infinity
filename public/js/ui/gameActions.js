@@ -67,6 +67,9 @@ export const actions = {
   choice: (idx) => act('g.choice', { idx }),
   ready: (ready) => act('g.ready', { ready }, { sfx: ready ? 'ready' : 'back' }),
   emote: (id) => act('g.emote', { id }, { quiet: true }),
+  // 打字聊天 (Infinity fork): a typed line, relayed by the server to every seat and spectator. `quiet` because the
+  // m.chat broadcast itself is the feedback — a success sfx on top of the incoming-line blip would double up.
+  chat: (text) => act('g.chat', { text: String(text ?? '') }, { quiet: true }),
   watch: (fieldId) => act('g.watch', { fieldId }, { sfx: 'tab' }),
   autoplay: (on) => act('g.autoplay', { on }),
   // solo battles only (ui/matchStatus.js pauseAvailable): m.public.paused follows

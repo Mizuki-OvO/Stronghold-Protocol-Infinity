@@ -70,19 +70,43 @@ test('endless scale: compounding growth stacked on the LAST official round', () 
     const first = gd.endlessFirstRound();
     const base = gd.baseEnemyScale(last);
     const g = gd.endlessCfg.growth;
-    assert.deepEqual(g, { hp: 1.05, atk: 1.03, def: 1.03 }, `${modeId}: default growth`);
+    // per endless wave: hp / atk / def are MULTIPLIERS, res is FLAT points (the official table has no def or res column)
+    assert.deepEqual(g, { hp: 1.1, atk: 1.06, def: 1.06, res: 1 }, `${modeId}: default growth`);
 
     for (const st of [1, 2, 5, 7, 20, 85]) {
       const r = first + st - 1;                    // endless wave `st`
       const s = gd.enemyScale(r);
       const f = Math.fround;
-      assert.equal(s.hpMul, f(base.hpMul * Math.pow(1.05, st)), `${modeId} R${r} hp`);
-      assert.equal(s.atkMul, f(base.atkMul * Math.pow(1.03, st)), `${modeId} R${r} atk`);
-      assert.equal(s.defMul, f(Math.pow(1.03, st)), `${modeId} R${r} def`);
+      assert.equal(s.hpMul, f(base.hpMul * Math.pow(g.hp, st)), `${modeId} R${r} hp`);
+      assert.equal(s.atkMul, f(base.atkMul * Math.pow(g.atk, st)), `${modeId} R${r} atk`);
+      assert.equal(s.defMul, f(Math.pow(g.def, st)), `${modeId} R${r} def`);
+      // res is additive: +g.res POINTS per wave, not a percentage
+      assert.equal(s.resFlat, f(g.res * st), `${modeId} R${r} res +${g.res * st}`);
       assert.equal(s.speedMul, base.speedMul, `${modeId} R${r} speed unchanged`);
       assert.equal(s.endless, st, `${modeId} R${r} step`);
     }
   }
+});
+
+test('endless growth: the four stats grow by the documented per-wave amounts', () => {
+  // The numbers the README / CHANGELOG promise: 生命 +10% / 防御 +6% / 攻击 +6% / 法抗 +1 per wave.
+  const gd = endlessGd();
+  const g = gd.endlessCfg.growth;
+  assert.equal(g.hp, 1.1, '生命每波 +10%');
+  assert.equal(g.def, 1.06, '防御每波 +6%');
+  assert.equal(g.atk, 1.06, '攻击每波 +6%');
+  assert.equal(g.res, 1, '法抗每波 +1');
+  // the cumulative shape that used to read as "defence growth does nothing"
+  const at = (st) => gd.enemyScale(gd.endlessFirstRound() + st - 1);
+  assert.ok(Math.abs(at(6).defMul - Math.pow(1.06, 6)) < 1e-6, '第 6 波防御 ×1.42');
+  assert.ok(at(6).defMul > 1.4, 'clearly above the old 1.19');
+  assert.equal(at(6).resFlat, 6, '第 6 波法抗 +6');
+  // config can switch the resistance growth off entirely
+  const off = new GameData(DATA, 'mode_single_abyss');
+  off.setEndlessActive(true);
+  off.config = { ...off.config, endless: { growth: { hp: 1.05, atk: 1.03, def: 1.03, res: 0 } } };
+  assert.equal(off.endlessCfg.growth.res, 0);
+  assert.equal(off.enemyScale(off.endlessFirstRound() + 5).resFlat, undefined, 'no resFlat key when growth.res is 0');
 });
 
 test('endless scale: official rounds AND the Hidden Core are untouched', () => {
@@ -244,9 +268,11 @@ test('endless boss pool merges the Final Assault and Hidden Core pools', () => {
 
 test('endless boss hp pool scales with the same compounding', () => {
   const gd = endlessGd();
+  const g = gd.endlessCfg.growth;
   assert.equal(gd.endlessBossPoolMul(gd.lastRound), 1, 'official rounds unscaled');
+  // the leader's shared pool rides the HP growth of the same wave number (not the defence/attack ones)
   for (const st of [1, 3, 7]) {
-    assert.equal(gd.endlessBossPoolMul(gd.endlessFirstRound() + st - 1), Math.pow(1.05, st), `step ${st}`);
+    assert.equal(gd.endlessBossPoolMul(gd.endlessFirstRound() + st - 1), Math.pow(g.hp, st), `step ${st}`);
   }
 });
 

@@ -130,7 +130,7 @@
 //     human is left at all the match ends ('abandoned'); when nobody alive is left it ends as 'eliminated'.
 
 import { C2S, unitStatsEntry } from '../../shared/protocol.js';
-import { PHASE, ERR, EMOTES, EMOTE_COOLDOWN_MS, GEO, modeIdFor, layerGainRoom } from '../../shared/constants.js';
+import { PHASE, ERR, EMOTES, EMOTE_COOLDOWN_MS, CHAT_COOLDOWN_MS, CHAT_BURST, CHAT_LOG_MAX, CHAT_MAX_LEN, GEO, modeIdFor, layerGainRoom } from '../../shared/constants.js';
 import { Battle } from '../sim/Battle.js';
 import { DataSource } from '../sim/simdata.js';
 import { createRng, deriveSeed } from '../sim/rng.js';
@@ -390,6 +390,11 @@ export class Match {
     this.endlessBossId = null;
     /** the endless round reached (0 while the official rounds run) — reported in the result */
     this.endlessRound = 0;
+    /**
+     * Typed chat backlog (打字聊天, Infinity fork): the last CHAT_LOG_MAX lines, handed to a (re)joining socket so a
+     * reconnect or a late spectator sees the recent conversation. Bounded, never part of m.public / the result.
+     */
+    this._chatLog = [];
     this.outcome = null;
     this._turnToken = 0;
   }
@@ -489,6 +494,9 @@ export class Match {
   _resync(ps) {
     const playerId = ps.playerId;
     this.sendTo(playerId, this.publicView());
+    // 打字聊天 (Infinity fork): hand over the recent lines, so a reconnect or a spectator who joined mid-match sees the
+    // conversation instead of an empty box. Only when there is something to send.
+    if (this._chatLog.length) this.sendTo(playerId, this.chatBacklog());
     if (!this.ended) {
       if (!ps.spectator) {
         ps._lastPriv = null;
@@ -1079,6 +1087,8 @@ export class Match {
       case 'g.choice': return this.pickCard(ps, msg.idx);
       case 'g.ready': return ps.setReady(!!msg.ready);
       case 'g.emote': return this.emote(ps, msg.id);
+      // 打字聊天 (Infinity fork): one typed line to the whole match (co-op only)
+      case 'g.chat': return this.chat(ps, msg.text);
       case 'g.watch': return this.watch(ps, msg.fieldId);
       case 'g.autoplay': return this.setAutoplay(ps, !!msg.on);
       case 'g.pause': return this.setPause(ps, !!msg.on);
@@ -1100,6 +1110,46 @@ export class Match {
     ps.lastEmoteAt = now;
     this.broadcast({ t: 'm.emote', playerId: ps.playerId, id });
     return OK;
+  }
+
+  /**
+   * Typed chat (打字聊天, Infinity fork): one line from a seat, broadcast to the whole match — every player AND every
+   * spectator (the match's `broadcast` reaches spectators too, like m.emote / m.public).
+   *
+   * Co-op only: a solo match has nobody to talk to, so it is refused (the client hides the box there anyway).
+   *
+   * Rate limit: `CHAT_BURST` messages may go back-to-back, then one per `CHAT_COOLDOWN_MS`; a short token bucket rather
+   * than a flat cooldown so pasting a few quick lines works but flooding does not. The sender's NAME comes from the
+   * server's own seat state (never from the message), so a client cannot speak as somebody else.
+   */
+  chat(ps, text) {
+    if (this.isSolo) return fail(ERR.WRONG_PHASE, 'solo matches have no chat');
+    if (typeof text !== 'string') return fail(ERR.BAD_MSG);
+    // collapse whitespace runs and drop control characters: one line, no layout tricks over the board
+    const clean = text.replace(/[\u0000-\u001F\u007F]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX_LEN);
+    if (!clean) return fail(ERR.BAD_MSG, 'empty message');
+    const now = this.sched.now();
+    // A short token bucket rather than a flat cooldown, so pasting a few quick lines works but flooding does not:
+    // CHAT_BURST messages may follow each other immediately, then one per CHAT_COOLDOWN_MS. A gap of at least one
+    // cooldown refills the bucket.
+    if (now - ps.lastChatAt >= CHAT_COOLDOWN_MS) {
+      ps.chatBurst = CHAT_BURST;
+    } else if (ps.chatBurst > 0) {
+      ps.chatBurst--;
+    } else {
+      return fail(ERR.RATE);
+    }
+    ps.lastChatAt = now;
+    const line = { t: 'm.chat', playerId: ps.playerId, name: ps.name, text: clean, at: now };
+    this._chatLog.push({ playerId: ps.playerId, name: ps.name, text: clean, at: now });
+    if (this._chatLog.length > CHAT_LOG_MAX) this._chatLog.splice(0, this._chatLog.length - CHAT_LOG_MAX);
+    this.broadcast(line);
+    return OK;
+  }
+
+  /** The chat backlog a (re)joining socket receives, so a reconnect / late spectator is not staring at an empty box. */
+  chatBacklog() {
+    return { t: 'm.chatLog', lines: this._chatLog.slice(-CHAT_LOG_MAX) };
   }
 
   watch(ps, fieldId) {

@@ -81,6 +81,9 @@ export const initialState = Object.freeze({
   match: emptyMatch(),
   ticker: [],
   emotes: [],
+  // 打字聊天 (Infinity fork): the `m.chat` lines of this match, oldest first, capped at CHAT_LOG_MAX client-side too.
+  // `m.chatLog` replaces it wholesale on a (re)connect, so a resumed tab is not missing the conversation.
+  chat: [],
   // 无尽模式 (docs/ENDLESS.md): the ENDLESS_PROMPT vote state pushed by m.endless
   // ({ votes: { [playerId]: boolean }, needed, you, decided }); null outside the prompt.
   endless: null,

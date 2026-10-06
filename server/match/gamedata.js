@@ -58,7 +58,12 @@ export const DEFAULTS = Object.freeze({
     // An explicit template list instead of `eliteTemplateRounds` (null = derive from those rounds). Kept as an escape
     // hatch for the 数值修改器 / a config override; must hold `eliteRounds` usable templates to take effect.
     eliteTemplates: null,
-    growth: { hp: 1.05, atk: 1.03, def: 1.03 },
+    // Per endless wave, applied ON TOP of the official round-14/15 row (gamedata.roundScale, compounding):
+    //   hp / atk / def are MULTIPLIERS, res is FLAT points (the official table has no defence or resistance column at
+    //   all — both are endless-only, like def; the official table does have res per enemy, so the loop adds to it).
+    // The old values were 1.05 / 1.03 / 1.03 with NOTHING for res: +3 %/wave on defence and attack was far too small to
+    // notice by wave 6 (×1.19), which read as "defence growth does nothing".
+    growth: { hp: 1.10, atk: 1.06, def: 1.06, res: 1 },
     // Per-wave balance on the player's side, applied when a wave ENDS (settle) from `fromWave` on:
     //   every ALIVE player loses `layerCut` layers from its HIGHEST-layer bond (ties broken at random among the equal
     //   maxima; skipped when that bond holds fewer than `layerCut`), and gains `lpGain` target LP (`maxLp` caps it).
@@ -165,6 +170,10 @@ export function roundScale(r, gd) {
     hpMul: Math.fround(official.hpMul * Math.pow(g.hp, st)),
     atkMul: Math.fround(official.atkMul * Math.pow(g.atk, st)),
     defMul: Math.fround(Math.pow(g.def, st)),
+    // FLAT resistance points per wave, not a multiplier: units.js computes `res = clamp((base + flat) * mul, 0, 100)`, so
+    // adding points is the natural shape and the sim already clamps at 100. Endless-only (the official table has no such
+    // column) and null when the growth setting is 0, so nothing downstream sees a no-op key.
+    ...(g.res > 0 ? { resFlat: Math.fround(g.res * st) } : null),
     speedMul: official.speedMul,
     endless: st,
   };
@@ -724,6 +733,8 @@ export class GameData {
         hp: Math.max(1, numOr(gRaw.hp, d.growth.hp)),
         atk: Math.max(1, numOr(gRaw.atk, d.growth.atk)),
         def: Math.max(1, numOr(gRaw.def, d.growth.def)),
+        // FLAT resistance points per wave (0 = no resistance growth); see roundScale.
+        res: Math.max(0, numOr(gRaw.res, d.growth.res)),
       },
       balance: {
         fromWave: Math.max(1, Number.isInteger(bRaw.fromWave) ? bRaw.fromWave : bDefault.fromWave),

@@ -250,6 +250,16 @@ export function scaleFor(gd, r) {
   return gd.enemyScale(r);
 }
 
+/**
+ * 无尽模式's defence / resistance growth, as spawn mods: `defMul` (a multiplier) and `resFlat` (flat points, because
+ * units.js computes `res = clamp((base + flat) * mul, 0, 100)`). Spread into a spawn's mods only when present, so an
+ * official round's SpawnSpec carries exactly the keys it always did.
+ */
+const DEF_GROWTH = (scale) => ({
+  ...(scale.defMul ? { defMul: scale.defMul } : null),
+  ...(scale.resFlat ? { resFlat: scale.resFlat } : null),
+});
+
 /** Slot class of an enemy that has no placeholder slot (literal template keys, bounty adds). */
 export function classOf(gd, enemyKey) {
   const e = gd.enemy(enemyKey);
@@ -350,11 +360,12 @@ function templateSpawns(gd, tpl, round, pick) {
       interval: count > 1 ? step : 0,
       // the round multipliers are ENEMY effects on every enemy but 炎佑 (aceffect_enemy_1–5 `enemy_attribute_mul`,
       // enemy_exclude = enemy_9012_acloon): leader parts take them all; the leader takes ATK / speed but not HP — its HP
-      // is the server pool, "领袖单位于服务器的生命值加成不受上述加成影响" (PRTS 下半). `defMul` is only ever set by the
-      // endless compounding (gamedata.roundScale); the official table has no defence column.
+      // is the server pool, "领袖单位于服务器的生命值加成不受上述加成影响" (PRTS 下半). `defMul` and `resFlat` are only ever
+      // set by the endless compounding (gamedata.roundScale); the official table has no defence column and no
+      // per-round resistance column. The leader keeps them too: they are the loop's own growth, not the shared pool.
       mods: isBoss
-        ? { atkMul: scale.atkMul, speedMul: scale.speedMul, ...(scale.defMul ? { defMul: scale.defMul } : null), slot }
-        : { hpMul: scale.hpMul, atkMul: scale.atkMul, ...(scale.defMul ? { defMul: scale.defMul } : null), speedMul: scale.speedMul, slot },
+        ? { atkMul: scale.atkMul, speedMul: scale.speedMul, ...DEF_GROWTH(scale), slot }
+        : { hpMul: scale.hpMul, atkMul: scale.atkMul, ...DEF_GROWTH(scale), speedMul: scale.speedMul, slot },
       actionIndex: i,
       preview: previewInfo(gd, key, routes[routeIndex], isBoss, leader),
     };

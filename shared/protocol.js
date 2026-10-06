@@ -1,7 +1,7 @@
 // Normative message catalogue (DESIGN §8). Used by server (validation) and client (building requests).
 // Every client→server message is `{ t, rid?, ...fields }`. Unknown `t` or invalid fields ⇒ ERR.BAD_MSG.
 
-import { DIFFICULTIES, NAME_MAX_LEN, ROOM_CODE_LEN, MAX_SEATS, EMOTES, GEO } from './constants.js';
+import { DIFFICULTIES, NAME_MAX_LEN, ROOM_CODE_LEN, MAX_SEATS, EMOTES, CHAT_MAX_LEN, GEO } from './constants.js';
 
 // ---- tiny validators -------------------------------------------------------
 const isInt = (v, lo = -Infinity, hi = Infinity) => Number.isInteger(v) && v >= lo && v <= hi;
@@ -285,6 +285,9 @@ export const C2S = {
   // A majority of alive seats decides (bots default to yes); the server answers with m.endless { votes, needed, you }.
   'g.endless': { enter: isBool },
   'g.emote': { id: (v) => EMOTES.includes(v) },
+  // typed chat (打字聊天, Infinity fork; co-op only — solo ⇒ WRONG_PHASE). Text is trimmed and capped at CHAT_MAX_LEN;
+  // the server relabels the sender from its own session, so a client cannot speak as somebody else.
+  'g.chat': { text: (v) => isStr(v, CHAT_MAX_LEN * 2) && v.trim().length > 0 },
   'g.watch': { fieldId: (v) => isStr(v, 32) },
   'g.autoplay': { on: isBool },
   // solo pause (official PauseUp / ResumeUp, DESIGN §14): freezes the running battle (field clock, deadlines, the
@@ -313,6 +316,11 @@ export const S2C = [
   'welcome', 'ok', 'error', 'pong',
   'room.state', 'room.closed',
   'm.public', 'm.private', 'm.field', 'm.toast', 'm.ticker', 'm.emote', 'm.result',
+  // m.chat { playerId, name, text, at } — one typed chat line, broadcast to every seat and spectator (Infinity fork)
+  'm.chat',
+  // m.chatLog { lines: [{ playerId, name, text, at }] } — the backlog a (re)joining socket gets, so a reconnect or a
+  // late spectator sees the recent conversation instead of an empty box
+  'm.chatLog',
   // m.endless { votes: { [playerId]: bool }, needed, you: bool|null } — the endless-mode vote (ENDLESS_PROMPT)
   'm.endless',
   // m.unitStats { seq, round, units: [unitStatsEntry] } — the answer to g.unitStats (the requester only)

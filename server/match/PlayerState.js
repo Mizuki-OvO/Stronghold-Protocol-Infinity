@@ -109,6 +109,9 @@ export class PlayerState {
     this.ready = false;
     this.infoReady = this.isBot;
     this.lastEmoteAt = -Infinity;
+    // typed chat rate limit (打字聊天, Infinity fork): a small token bucket, see Match.chat
+    this.lastChatAt = -Infinity;
+    this.chatBurst = 0;
     /** operator loadout (DESIGN §16): frozen { [baseChessId]: { skill, module } }, {} = every chess on its defaults */
     this.loadout = Object.freeze({});
     if (!this.isBot && seat.loadout) this.setLoadout(seat.loadout);

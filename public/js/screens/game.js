@@ -80,6 +80,8 @@ import { ChoiceOverlay } from '../ui/choiceOverlay.js';
 import { EnemyDrawer } from '../ui/enemyDrawer.js';
 import { Ticker } from '../ui/ticker.js';
 import { EmoteWheel } from '../ui/emotes.js';
+// 打字聊天 (Infinity fork): the co-op chat panel, its unread badge and the server's normalisation helper
+import { ChatPanel, unreadCount } from '../ui/chat.js';
 import { EffectsList } from '../ui/effectsList.js';
 import { CombatHud } from '../ui/combatHud.js';
 import { SettingsModal } from '../ui/settings.js';
@@ -188,6 +190,8 @@ function MatchScreen() {
   const myId = useStore((s) => s.me.playerId);
   const conn = useStore((s) => s.connection, shallowEqual);
   const emotes = useStore((s) => s.emotes);
+  // 打字聊天 (Infinity fork): the m.chat log of this match, pushed by m.chat / m.chatLog
+  const chatLines = useStore((s) => s.chat);
   // 无尽模式 (docs/ENDLESS.md): the ENDLESS_PROMPT ballot (pushed by m.endless)
   const endlessVote = useStore((s) => s.endless);
   const roomSolo = useStore((s) => s.room?.mode === 'solo');
@@ -207,6 +211,9 @@ function MatchScreen() {
   const [collapsed, setCollapsed] = useState(false);
   const [rewardMin, setRewardMin] = useState(false);
   const [emoteOpen, setEmoteOpen] = useState(false);
+  // 打字聊天 (Infinity fork): the panel is closed by default; `chatSeenAt` drives the unread badge.
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatSeenAt, setChatSeenAt] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [exitOpen, setExitOpen] = useState(false);
   const [drag, setDrag] = useState(null);                // { uid, kind, id } while dragging a piece
@@ -276,7 +283,7 @@ function MatchScreen() {
     priv, stage: gd.stage(pub?.stageId), editable, field: deployField,
     getChess: gd.chess, getToken: gd.token, getItem: gd.item, getEffect: gd.effect,
   }), [priv, pub?.stageId, editable, gd.ready, deployField]);
-  live.current = { pub, priv, field, editable, placeCtx, watching, watchWho, home, myId, detail, drawer, bondOpen, emoteOpen, settingsOpen, exitOpen, drag, facing, sel, pen, collapsedNow: collapsed, localDone: false, canPause: false, paused };
+  live.current = { pub, priv, field, editable, placeCtx, watching, watchWho, home, myId, detail, drawer, bondOpen, emoteOpen, chatOpen, settingsOpen, exitOpen, drag, facing, sel, pen, collapsedNow: collapsed, localDone: false, canPause: false, paused };
 
   // ---- camera: every request goes through setCam, which remembers it for the pen's way back -----------------------
   // the own prep board: the normal board, or — in the prep of a boss round — the player's half of the boss field
@@ -1071,7 +1078,8 @@ function MatchScreen() {
       // dialogs / the guide own the keyboard; behind the 本局信息 / 敌方情报 drawer only Esc (closing it) acts
       if (shortcutBlocked(act, { modal: !!document.querySelector('.modal, .guide'), drawer: !!L.drawer })) return;
       if (act === 'escape') {
-        if (L.emoteOpen) setEmoteOpen(false);
+        if (L.chatOpen) setChatOpen(false);
+        else if (L.emoteOpen) setEmoteOpen(false);
         else if (L.pen && !L.detail) togglePenRef.current(false);
         else if (L.bondOpen) setBondOpen(null);
         else if (L.detail) setDetail(null);
@@ -1085,6 +1093,14 @@ function MatchScreen() {
         e.preventDefault();
         if (e.target instanceof HTMLElement && e.target.closest('button, [role="button"]')) e.target.blur();
         togglePauseRef.current(!L.paused);
+        return;
+      }
+      // 打字聊天 (Infinity fork): T toggles the panel in ANY phase — a team talks during prep and mid-battle alike.
+      // Solo matches have no chat (the server refuses it), so the key is inert there.
+      if (act === 'chat') {
+        if (roomSolo) return;
+        e.preventDefault();
+        setChatOpen((v) => { if (!v) setChatSeenAt(Date.now()); return !v; });
         return;
       }
       if (L.pub?.phase !== PHASE.PREP || !L.priv) return;
@@ -1273,6 +1289,9 @@ function MatchScreen() {
 
       <div class="gm__corner">
         ${spectator ? null : html`<${EmoteWheel} open=${emoteOpen} onToggle=${setEmoteOpen} onSend=${(id) => actions.emote(id)} disabled=${conn.status !== 'online'} />`}
+        ${solo ? null : html`<${ChatPanel} open=${chatOpen} lines=${chatLines} myId=${myId} unread=${unreadCount(chatLines, chatSeenAt, myId)}
+          disabled=${conn.status !== 'online'} onToggle=${() => setChatOpen((v) => { if (!v) setChatSeenAt(Date.now()); return !v; })}
+          onSend=${(text) => actions.chat(text)} />`}
         <button type="button" class="gm__gear" aria-label="设置" title="设置" onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
         <button type="button" class="gm__gear gm__guide" aria-label="玩法说明" title="玩法说明" onClick=${() => openGuide(0)}><${Icon} name="book" /></button>
         <${FullscreenButton} class="gm__gear gm__fs" />

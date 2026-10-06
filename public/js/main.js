@@ -51,6 +51,8 @@ const RESTORE_GRACE_MS = 1500;
 const JOIN_DELAY_MS = 350;
 const TICKER_KEEP = 20;
 const EMOTE_KEEP = 20;
+/** 打字聊天 (Infinity fork): client-side cap on the log (the server keeps CHAT_LOG_MAX, this is a UI safety net). */
+const CHAT_KEEP = 60;
 
 const SCREENS = { title: TitleScreen, lobby: LobbyScreen, room: RoomScreen, game: GameScreen };
 
@@ -129,7 +131,7 @@ function backToLobby() {
   clearTimeout(restoreTimer);
   const s = store.get();
   if (s.room || s.match.public) closeAllDialogs();
-  store.set({ room: null, match: emptyMatch(), ticker: [], emotes: [] });
+  store.set({ room: null, match: emptyMatch(), ticker: [], emotes: [], chat: [] });
   store.patch('ui', { restoring: false });
 }
 
@@ -228,6 +230,21 @@ function wireNet() {
   });
   net.on('m.emote', (msg) => {
     store.set((s) => ({ emotes: [...s.emotes.slice(-(EMOTE_KEEP - 1)), { seq: ++seq, playerId: msg.playerId, id: msg.id, at: Date.now() }] }));
+  });
+  // 打字聊天 (Infinity fork): one line from a seat or a spectator. `at` is the SERVER's clock, so the timestamps line
+  // up for everyone; the unread badge compares it against the local clock, which is close enough for a badge.
+  net.on('m.chat', (msg) => {
+    const line = { seq: ++seq, playerId: msg.playerId, name: msg.name, text: msg.text, at: Number.isFinite(msg.at) ? msg.at : Date.now() };
+    store.set((s) => ({ chat: [...s.chat.slice(-(CHAT_KEEP - 1)), line] }));
+    // a muted little blip for somebody else's line, so chat is noticeable without watching the corner
+    if (msg.playerId !== (store.get().me && store.get().me.playerId)) audio.sfx('emote', { volume: 0.3 });
+  });
+  // the backlog a (re)joining socket is handed (Match._resync), so a reconnect or a late spectator is not staring at an
+  // empty box; it replaces the log rather than appending, since this client's own history may be stale
+  net.on('m.chatLog', (msg) => {
+    const lines = (Array.isArray(msg.lines) ? msg.lines : [])
+      .map((l) => ({ seq: ++seq, playerId: l.playerId, name: l.name, text: l.text, at: Number.isFinite(l.at) ? l.at : Date.now() }));
+    store.set(() => ({ chat: lines.slice(-CHAT_KEEP) }));
   });
   // 无尽模式 (docs/ENDLESS.md): the ENDLESS_PROMPT vote. `votes` is { [playerId]: boolean }, `needed` the majority
   // the alive seats must reach, `you` this client's own answer (null while unanswered, false once the vote timed out).

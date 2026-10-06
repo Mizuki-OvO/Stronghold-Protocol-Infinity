@@ -1,0 +1,155 @@
+/* 打字聊天 (typed chat, Infinity fork) — the co-op chat button + panel in the game screen's corner.
+   Rendered only when the room is NOT solo (server/match/Match.js chat() refuses solo matches). */
+
+.chat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+/* the corner button: match the gear / emote buttons around it */
+.chat__btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  background: #171b21e6;
+  color: var(--text-md);
+  cursor: pointer;
+}
+
+.chat__btn:hover { color: var(--mint-500); border-color: var(--mint-500); }
+.chat__btn .icon { width: 18px; height: 18px; }
+
+/* unread badge (hidden while the panel is open) */
+.chat__badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: var(--red-500, #e73118);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+}
+
+/* the panel grows up-and-left from the button, so it never covers the shop bar along the bottom */
+.chat__panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  max-height: 320px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: #14181ee6;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 28px #0009;
+  overflow: hidden;
+}
+
+.chat__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 6px 5px 10px;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.chat__close {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dim, #93a1b1);
+  cursor: pointer;
+}
+
+.chat__close:hover { background: #ffffff14; color: var(--text-md); }
+.chat__close .icon { width: 13px; height: 13px; }
+
+.chat__log {
+  flex: 1;
+  min-height: 90px;
+  padding: 6px 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.chat__line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 0 3px;
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.chat__who { flex: none; color: var(--mint-500); font-weight: 600; }
+/* my own lines read in a warmer tone, so a quick glance separates mine from the team's */
+.chat__line.is-mine .chat__who { color: var(--amber, #ffc600); }
+.chat__text { flex: 1; color: var(--text-md); white-space: pre-wrap; }
+.chat__at { flex: none; color: #6d7784; font-size: 10px; }
+.chat__empty { margin: 6px 0; color: #6d7784; font-size: 12px; }
+
+.chat__form {
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  border-top: 1px solid var(--line-2);
+}
+
+.chat__input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 5px;
+  background: #0f1216;
+  color: var(--text-md);
+  font: inherit;
+  font-size: 12px;
+}
+
+.chat__input:focus { outline: none; border-color: var(--mint-500); }
+.chat__input:disabled { opacity: .5; }
+
+.chat__send {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 5px;
+  background: #22262f;
+  color: var(--mint-500);
+  cursor: pointer;
+}
+
+.chat__send:hover:not(:disabled) { background: #2b3140; }
+.chat__send:disabled { opacity: .45; cursor: default; }
+.chat__send .icon { width: 14px; height: 14px; }
+
+/* narrow screens (phones): the panel takes nearly the full width instead of a 300px column */
+@media (max-width: 640px) {
+  .chat__panel { width: min(86vw, 320px); max-height: 44vh; }
+}

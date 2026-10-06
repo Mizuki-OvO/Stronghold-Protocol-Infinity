@@ -1528,11 +1528,14 @@ export function rangeGridBox(grid, mirror = false) {
 // ---- keyboard ---------------------------------------------------------------------------------------------------
 
 /**
- * Map a keydown to a game shortcut (R refresh, F freeze, D level-up, Space ready, Esc close).
+ * Map a keydown to a game shortcut (R refresh, F freeze, D level-up, Space ready, T chat, Esc close).
  * Space means ready even while a HUD button has focus (a mouse click leaves the shop card / 刷新 focused, and
  * Space must not re-trigger it); the caller prevents the button's own activation. Enter still activates buttons.
+ *
+ * T opens the chat panel (打字聊天, Infinity fork). While a text box has focus this function returns null anyway, so
+ * typing a 't' into the chat input never re-triggers it.
  * @param {{ key?: string, code?: string, ctrlKey?: boolean, metaKey?: boolean, altKey?: boolean, repeat?: boolean, target?: any }} e
- * @returns {'refresh'|'freeze'|'levelUp'|'ready'|'escape'|null}
+ * @returns {'refresh'|'freeze'|'levelUp'|'ready'|'chat'|'escape'|null}
  */
 export function shortcutFor(e) {
   if (!e || e.ctrlKey || e.metaKey || e.altKey) return null;
@@ -1546,6 +1549,7 @@ export function shortcutFor(e) {
   if (code === 'KeyR' || key === 'r') return 'refresh';
   if (code === 'KeyF' || key === 'f') return 'freeze';
   if (code === 'KeyD' || key === 'd') return 'levelUp';
+  if (code === 'KeyT' || key === 't') return 'chat';
   if (code === 'Space' || key === ' ') return 'ready';
   return null;
 }
